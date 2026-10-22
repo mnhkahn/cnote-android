@@ -5,7 +5,7 @@
 ## 已完成
 
 - CNote 0.1.1 已通过蒲公英快速上传 API 发布，等待 `buildInfo` 返回成功，并校验发布信息的包名 `com.cyeam.cnote`、versionName `0.1.1`、versionCode `1001`。下载页：<https://www.pgyer.com/cnote-android>。
-- `.github/workflows/release.yml` 支持 tag 和手动版本输入；签名 APK、发布蒲公英、等待可下载、创建 GitHub Release 和 SHA-256 更新清单，并显示下载链接。
+- `.github/workflows/release.yml` 仅在推送稳定版本 tag 时发布；普通 push 只构建测试。签名 APK、发布蒲公英、等待可下载、基于已有 tag 创建 GitHub Release 和 SHA-256 更新清单，并显示下载链接。
 - 三个 GitHub Actions Secrets 已配置：`CNOTE_KEYSTORE_BASE64`、`CNOTE_STORE_PASSWORD`、`PGYER_API_KEY`。沿用 CNote 自己的签名，没有使用 homework 签名或在 APK 中嵌入蒲公英密钥。
 - 自动检查主通道复用 Cyeam 多 App 蒲公英网关；网关未注册/不可用时可读取本仓库的 GitHub Release 镜像。公网镜像只接受本仓库的固定 APK 资产路径和有效 SHA-256。
 - DownloadManager 仅在非计费网络下载；跨进程恢复同一任务，完成后校验 APK，前台提供安装入口。失败任务可重新获取更新链接重试；安装前等待编辑器全部草稿保存，并重新核验 APK。

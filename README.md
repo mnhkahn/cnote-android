@@ -47,8 +47,8 @@ python3 scripts/create-signing-key.py
 
 列表和编辑页右上角菜单都提供“检查更新”；可以查看进度、重试失败下载及安装已下载的版本。自动检查仅在 release 默认启用，debug 可手动检查，但会拒绝签名不同的 release 安装包。后台检查每进程最多每六小时一次，手动检查可立即重试；不会阻塞列表、编辑和笔记同步。
 
-- `android.yml`：main / PR 构建、单元测试、Python 发布脚本测试、Lint、上传 debug APK；独立 API 35 模拟器执行真实 SQLite / Keystore / WebView / APK 校验测试。
-- `release.yml`：推送 `vX.Y.Z` / `X.Y.Z` tag，或手动输入稳定版本号后，检查版本递增、构建并签名 APK、生成更新说明、发布蒲公英并等待真正可下载，再创建 GitHub Release（APK、更新清单、R8 mapping）。Actions Summary 中显示两个下载入口。
+- `android.yml`：main / PR 只构建和测试，上传 debug APK，不发布蒲公英或 GitHub Release。执行单元测试、Python 发布脚本测试、Lint；独立 API 35 模拟器执行真实 SQLite / Keystore / WebView / APK 校验测试。
+- `release.yml`：只有推送 `vX.Y.Z` / `X.Y.Z` tag 才发布，没有手动发布入口。检查版本递增、构建并签名 APK、生成更新说明、发布蒲公英并等待真正可下载，再基于已有 tag 创建 GitHub Release（APK、更新清单、R8 mapping）。Actions Summary 中显示两个下载入口。
 - versionCode 保留现有规则 `major*1000000 + minor*1000 + patch`，例如 0.1.0 为 1000，0.1.1 为 1001；不能照搬其他项目的小 workflow run number，否则无法覆盖已安装的 CNote。minor/patch 最大 999。
 
 仓库 Actions Secrets：`CNOTE_KEYSTORE_BASE64`、`CNOTE_STORE_PASSWORD`、`PGYER_API_KEY`。本次已配置，CNote 始终使用自己的 `.signing/release.jks`，不使用 homework 的签名。
