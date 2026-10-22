@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "371968411873",
+    "project_id": "homework-70b75",
+    "storage_bucket": "homework-70b75.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:371968411873:android:edf10540580535aa018fa0",
+        "android_client_info": {
+          "package_name": "com.cyeam.cnote"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCczowxN6rFgme_wbm9zeRuy3GnyHymyQM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
