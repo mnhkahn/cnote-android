@@ -25,6 +25,40 @@ class EditorTest {
     }
     private fun contextFile(app:CNoteApp,name:String)=java.io.File(app.getExternalFilesDir(null),name)
     private fun string(raw:String)=JSONArray("[$raw]").getString(0)
+    @androidx.test.filters.SdkSuppress(minSdkVersion=31)
+    @Test fun systemThemeChangesKeepEditableDraft() {
+        val app=ApplicationProvider.getApplicationContext<CNoteApp>()
+        val modes=app.getSystemService(android.app.UiModeManager::class.java)
+        val automation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+        automation.adoptShellPermissionIdentity("android.permission.MODIFY_DAY_NIGHT_MODE")
+        val original=modes.nightMode
+        val note=app.repository.db.create("主题切换","")
+        try {
+            modes.setNightMode(android.app.UiModeManager.MODE_NIGHT_NO)
+            ActivityScenario.launch(MainActivity::class.java).use { scenario->
+                await(scenario,"!!window.cnote&&document.documentElement.dataset.theme==='light'")
+                js(scenario,"cnote.action('open',{id:'${note.id}',title:'主题切换'})")
+                await(scenario,"document.getElementById('editor')?.contentEditable==='true'")
+                js(scenario,"window.themeDraft=document.getElementById('editor');themeDraft.innerHTML='<h1>我写的标题</h1><p>切换时保留草稿</p>';themeDraft.dispatchEvent(new Event('input',{bubbles:true}))")
+                for((mode,theme,background) in listOf(
+                    Triple(android.app.UiModeManager.MODE_NIGHT_YES,"dark","rgb(25, 30, 41)"),
+                    Triple(android.app.UiModeManager.MODE_NIGHT_NO,"light","rgb(255, 255, 255)")
+                )) {
+                    modes.setNightMode(mode)
+                    await(scenario,"document.documentElement.dataset.theme==='$theme'&&getComputedStyle(document.body).backgroundColor==='$background'")
+                    assertEquals("true",js(scenario,"themeDraft===document.getElementById('editor')&&themeDraft.contentEditable==='true'&&themeDraft.querySelector('h1').textContent==='我写的标题'"))
+                    scenario.onActivity { activity->
+                        val night=activity.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+                        assertEquals(if(theme=="dark")android.content.res.Configuration.UI_MODE_NIGHT_YES else android.content.res.Configuration.UI_MODE_NIGHT_NO,night)
+                    }
+                }
+            }
+        } finally {
+            modes.setNightMode(original)
+            automation.dropShellPermissionIdentity()
+            app.repository.db.remove(note.id);app.repository.refreshList()
+        }
+    }
     @Test fun localEditorAutosavesSwitchesWithoutSerializationAndRestoresAfterRecreation() {
         val app=ApplicationProvider.getApplicationContext<CNoteApp>();val repo=app.repository
         val a=repo.db.create("测试笔记 A","");val b=repo.db.create("测试笔记 B","")
@@ -37,7 +71,7 @@ class EditorTest {
             while(System.nanoTime()<until&&repo.db.get(a.id)!!.html!="<p>离线自动保存 ✓</p>")Thread.sleep(50)
             assertEquals("<p>离线自动保存 ✓</p>",repo.db.get(a.id)!!.html)
             js(scenario,"window.retained=document.getElementById('editor');cnote.action('open',{id:'${b.id}',title:'测试笔记 B'})")
-            await(scenario,"document.getElementById('editor')?.contentEditable==='true'&&document.getElementById('title').textContent==='测试笔记 B'")
+            await(scenario,"document.getElementById('editor')?.contentEditable==='true'&&document.getElementById('editor')!==retained")
             assertEquals("true",js(scenario,"(()=>{const t=performance.now();cnote.action('open',{id:'${a.id}'});window.cachedSwitchMs=performance.now()-t;return retained===document.getElementById('editor')})()"))
             Log.i("CNotePerf","cached_note_switch_ms="+js(scenario,"cachedSwitchMs"))
             assertEquals("离线自动保存 ✓",string(js(scenario,"document.getElementById('editor').textContent")))
@@ -74,11 +108,12 @@ class EditorTest {
             await(scenario,"!!window.cnote")
             js(scenario,"cnote.action('open',{id:'${a.id}',title:'缓存 A'})")
             await(scenario,"document.getElementById('editor')?.contentEditable==='true'")
-            js(scenario,"cnote.action('open',{id:'${b.id}',title:'缓存 B'})")
-            await(scenario,"document.getElementById('title').textContent==='缓存 B'&&document.getElementById('editor')?.contentEditable==='true'")
+            js(scenario,"window.cachedA=document.getElementById('editor');cnote.action('open',{id:'${b.id}',title:'缓存 B'})")
+            await(scenario,"document.getElementById('editor')!==cachedA&&document.getElementById('editor')?.contentEditable==='true'")
+            js(scenario,"window.cachedB=document.getElementById('editor')")
             repo.db.saveHtml(a.id,"","<p>后台更新的正文</p>")
             js(scenario,"cnote.receive({type:'invalidate',id:'${a.id}'})")
-            assertEquals("缓存 B",string(js(scenario,"document.getElementById('title').textContent")))
+            assertEquals("true",js(scenario,"document.getElementById('editor')===cachedB"))
             js(scenario,"cnote.action('open',{id:'${a.id}',title:'缓存 A'})")
             await(scenario,"document.getElementById('editor')?.textContent==='后台更新的正文'&&document.getElementById('editor').contentEditable==='true'")
             assertEquals("true",js(scenario,"(()=>{const e=document.getElementById('editor');e.innerHTML='<p>本机尚未保存的新输入</p>';e.dispatchEvent(new Event('input',{bubbles:true}));cnote.receive({type:'invalidate',id:'${a.id}'});return e.contentEditable==='true'&&e.textContent==='本机尚未保存的新输入'})()"))

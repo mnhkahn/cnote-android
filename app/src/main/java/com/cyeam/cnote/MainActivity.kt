@@ -62,8 +62,8 @@ class MainActivity:ComponentActivity() {
     private val ink get()=Color.parseColor(if(dark)"#DFE7F3" else "#253047")
     private val bg get()=Color.parseColor(if(dark)"#151A24" else "#F5F7FB")
     private val paper get()=Color.parseColor(if(dark)"#191E29" else "#FFFFFF")
-    private val muted=Color.rgb(125,140,161)
-    private val blue=Color.rgb(40,112,232)
+    private val muted get()=Color.parseColor(if(dark)"#A4AFC0" else "#68788E")
+    private val blue get()=Color.parseColor(if(dark)"#8DB7FF" else "#2870E8")
     private val dates=DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT)
     private val font by lazy { Typeface.createFromAsset(assets,"editor/bootstrap-icons.ttf") }
     private val installPermission=registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -89,6 +89,7 @@ class MainActivity:ComponentActivity() {
     }
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
+        androidx.core.view.WindowCompat.getInsetsController(window,window.decorView).isAppearanceLightNavigationBars=!dark
         root=FrameLayout(this).apply { setBackgroundColor(bg) };setContentView(root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { view,insets->val bars=insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);insets }
         buildList();buildEditor();web=vm.editorView
@@ -148,7 +149,8 @@ class MainActivity:ComponentActivity() {
     @Suppress("SetJavaScriptEnabled") private fun initializeEditor() {
         vm.editorView?.let { retained->
             (retained.context as android.content.MutableContextWrapper).baseContext=this
-            web=retained;editPane.addView(retained,LinearLayout.LayoutParams(-1,0,1f));return
+            web=retained;retained.setBackgroundColor(paper)
+            editPane.addView(retained,LinearLayout.LayoutParams(-1,0,1f));syncEditorTheme();return
         }
         val model=vm
         val loader=WebViewAssetLoader.Builder().addPathHandler("/assets/",WebViewAssetLoader.AssetsPathHandler(applicationContext)).build()
@@ -183,11 +185,12 @@ class MainActivity:ComponentActivity() {
     private fun showList() { editorVisible=false;listPane.visibility=View.VISIBLE;editPane.visibility=View.INVISIBLE;if(ready)js("window.cnote.flushAll()");vm.command("list");(getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(root.windowToken,0);app.analytics.screen("notes") }
     private fun action(type:String,data:JSONObject=JSONObject())=js("window.cnote.action(${JSONObject.quote(type)},$data)")
     private fun js(script:String) { if(!ready){queued.addLast(script);return};web?.evaluateJavascript(script,null) }
+    private fun syncEditorTheme() { web?.setBackgroundColor(paper);js("window.cnote.setTheme(${JSONObject.quote(if(dark)"dark" else "light")})") }
     private fun receive(event:JSONObject)=js("window.cnote.receive($event)")
     private fun reviewOrSync() { val issue=vm.state.value.notes.firstOrNull { it.id==vm.state.value.selected&&(it.conflict||it.needsApproval) }?:vm.state.value.notes.firstOrNull { it.conflict||it.needsApproval };if(issue==null)vm.command("sync") else vm.command("review",JSONObject().put("id",issue.id)) }
     private fun effect(event:JSONObject) {
         when(event.getString("type")) {
-            "web_ready"->{while(queued.isNotEmpty())js(queued.removeFirst())}
+            "web_ready"->{while(queued.isNotEmpty())js(queued.removeFirst());syncEditorTheme()}
             "load"->{receive(event);if(!event.isNull("id"))showEditor()}
             "state","save_failed","error","invalidate"->receive(event)
             "saved"->{receive(event);if(!editorVisible)vm.command("list")}

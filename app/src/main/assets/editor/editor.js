@@ -1,7 +1,7 @@
 'use strict';
 (() => {
  let editor=document.getElementById('editor');
- const title=document.getElementById('title'), editorTemplate=editor.cloneNode(false), main=document.querySelector('main');
+ const editorTemplate=editor.cloneNode(false), main=document.querySelector('main');
  editorTemplate.classList.add('note-editor');editorTemplate.removeAttribute('id');
  const stack=document.createElement('div');stack.className='editor-stack';editor.replaceWith(stack);
  const dialog=document.getElementById('dialog'), body=document.getElementById('dialog-body'), actions=document.getElementById('dialog-actions');
@@ -62,7 +62,7 @@
   remember();if(active){active.scroll=scrollPosition;active.selection=selection;active.pane.classList.remove('active');active.pane.setAttribute('aria-hidden','true');}
   editor.removeAttribute('id');editor=n.node;editor.id='editor';active=n;id=n.id;selection=n.selection;
   n.pane.classList.add('active');n.pane.removeAttribute('aria-hidden');n.height=n.height||n.node.offsetHeight;stack.style.height=n.height+'px';
-  notes.delete(id);notes.set(id,n);title.textContent=n.title;
+  notes.delete(id);notes.set(id,n);
   document.getElementById('document').hidden=false;document.getElementById('empty').style.display='none';
   document.getElementById('count').textContent=n.count;
   if(scrollPosition!==n.scroll){main.scrollTop=n.scroll;scrollPosition=n.scroll;}deferCount();prune();
@@ -112,7 +112,7 @@
   modal('new','新建笔记',[input],[cancel,['创建',submit,'primary']]);
   input.onkeydown=e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();if(input.value.trim()){dialog.close();submit();}}};setTimeout(()=>input.focus(),0);
  }
- function deleteNote(targetId=id,targetTitle=title.textContent){if(!targetId)return;modal('delete','删除笔记',[text('p',`“${targetTitle}”将从本机和 OneDrive 移除。此操作无法在应用内撤销。`)],[cancel,['确认删除',()=>barrier(()=>{const n=notes.get(targetId);if(n)dispose(n);notes.delete(targetId);navigate('delete',{id:targetId});}),'danger']]);}
+ function deleteNote(targetId=id,targetTitle=active?.title){if(!targetId)return;modal('delete','删除笔记',[text('p',`“${targetTitle}”将从本机和 OneDrive 移除。此操作无法在应用内撤销。`)],[cancel,['确认删除',()=>barrier(()=>{const n=notes.get(targetId);if(n)dispose(n);notes.delete(targetId);navigate('delete',{id:targetId});}),'danger']]);}
  const tools=[['type-bold','加粗','bold'],['type-italic','斜体','italic'],['type-underline','下划线','underline'],['type-strikethrough','删除线','strikeThrough'],['code-slash','代码',()=>{const s=getSelection()?.toString()||'代码';const code=text('code',s);insert(code.outerHTML);}],null,
   [null,'一级标题',()=>command('formatBlock','h1'),'H1'],[null,'二级标题',()=>command('formatBlock','h2'),'H2'],[null,'三级标题',()=>command('formatBlock','h3'),'H3'],null,
   ['list-ul','无序列表','insertUnorderedList'],['list-ol','有序列表','insertOrderedList'],['check2-square','待办事项',task],['table','插入表格',()=>{
@@ -190,7 +190,7 @@
     else if(!n.loaded||n.source!==e.html){
      n.node.innerHTML=sanitize(e.html);n.source=e.html;n.bytes=e.html.length;n.loaded=true;n.node.contentEditable='true';n.selection=null;
     }
-    n.stale=false;n.node.contentEditable='true';n.title=e.title;activate(n);title.textContent=n.title;deferCount();break;
+    n.stale=false;n.node.contentEditable='true';n.title=e.title;activate(n);deferCount();break;
    }
    case 'saved':{
     const n=notes.get(e.id);if(!n)break;
@@ -218,6 +218,7 @@
   }
  }
  window.cnote={action,receive,flush,flushAll,sanitize,focusEditor:restore,
+  setTheme(theme){document.documentElement.dataset.theme=theme;},
   insertImage(src){if(id&&/^data:image\/(png|jpeg|webp|gif|bmp);base64,/i.test(src)){const img=document.createElement('img');img.src=src;img.alt='图片';insert(img.outerHTML);}},
   resolve(noteId,choice){barrier(()=>{const n=notes.get(noteId);if(n){if(active===n){active=null;id='';selection=null;}dispose(n);notes.delete(noteId);}post({type:'resolve',id:noteId,choice});});},
   approve(noteId,revision){barrier(()=>post({type:'approve',id:noteId,revision}));}
