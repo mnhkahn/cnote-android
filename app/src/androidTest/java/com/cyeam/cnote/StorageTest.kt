@@ -46,9 +46,20 @@ class StorageTest {
         assertThrows(IllegalStateException::class.java) { db.saveHtml(id,"a","empty overwrite") }
         assertTrue(db.downloaded(id,"<p>downloaded</p>","v1",false));assertTrue(db.validCached(id,"a"))
     }
-    @Test fun approvalOnlyAppliesToExactRevision() {
-        val n=db.create("approval","a");db.needApproval(n.id,0);db.saveHtml(n.id,"a","new");db.approval(n.id,0,"a");assertEquals(-1,db.get(n.id)!!.approvedRevision)
-        db.approval(n.id,1,"a");assertEquals(1,db.get(n.id)!!.approvedRevision);assertFalse(db.get(n.id)!!.needsApproval)
+    @Test fun legacyApprovalFlagsAreClearedOnOpenAndLargeEditsRemainPending() {
+        val n=Note(account="a",title="legacy",html="old".repeat(500),needsApproval=true,approvedRevision=7)
+        db.put(n);db.close();db=NoteDatabase(context,name)
+        assertFalse(db.get(n.id)!!.needsApproval);assertEquals(-1,db.get(n.id)!!.approvedRevision)
+        db.saveHtml(n.id,"a","");assertEquals(n.id,db.pendingIds("a").single());assertFalse(db.get(n.id)!!.needsApproval)
+    }
+    @Test fun mergedConflictChecksReviewedRevisionAndEtagAndPersistsBothVersionsOnFailure() {
+        val n=Note(account="a",title="merge",remoteId="r",html="local",baseline="old",etag="v1");db.put(n);db.conflict(n.id,"remote","v2")
+        assertThrows(IllegalArgumentException::class.java){db.resolve(n.id,"merge","a",99,"v2","wrong")}
+        assertThrows(IllegalArgumentException::class.java){db.resolve(n.id,"cloud","a",0,"stale")}
+        assertEquals("local",db.get(n.id)!!.html);assertEquals("remote",db.get(n.id)!!.conflictHtml);assertTrue(db.get(n.id)!!.conflict)
+        db.resolve(n.id,"merge","a",0,"v2","merged")
+        val resolved=db.get(n.id)!!;assertEquals("merged",resolved.html);assertEquals("remote",resolved.baseline);assertEquals("v2",resolved.etag);assertTrue(resolved.dirty);assertFalse(resolved.conflict);assertEquals(1,resolved.revision)
+        db.close();db=NoteDatabase(context,name);assertEquals("merged",db.get(n.id)!!.html)
     }
     @Test fun inlineImagesLargerThanCursorWindowSurviveReopen() {
         val html="<p>large image</p><img src=\"data:image/png;base64,"+"a".repeat(3*1024*1024)+"\">"

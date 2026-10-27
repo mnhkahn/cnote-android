@@ -1,3 +1,18 @@
+# 2026-10-27 冲突与图片补齐验证
+
+- Android 36 / Google APIs x86_64 模拟器 `cnote_android_test`（`ANDROID_SERIAL=emulator-5554`）：17 项 AndroidJUnitRunner 测试全部通过。
+- 新增真实 WebView / SQLite / 剪贴板测试覆盖逐段显式选择、合并预览、过期本地修订拒绝、重新打开对比、保存结果反馈，以及图片触屏选择、放大预览、返回键关闭、PNG content URI 读取、剪切与撤销、系统剪贴板图片回贴。
+- 存储测试覆盖旧版大改确认标记清理、空内容仍待同步、云端 ETag 和本地修订不符时保留双方内容、合并后基线与 ETag 更新。
+- JVM：10 项测试通过；本地 Chromium / WebKit 触屏浏览器：9 项测试通过；发布脚本：4 项 Python 测试通过。
+- `lintDebug` 为 0 errors，仍有已有的 KTX、国际化等建议；`assembleDebug` 和测试 APK 构建成功。
+- 浏览器测试与差异资源一致性检查已加入 Android CI；差异库随 APK 打包，不依赖 CDN。
+- 一轮测试期间新连接的实体平板被 Gradle 自动发现，安装被取消（`INSTALL_FAILED_USER_RESTRICTED`），未安装成功。最终测试显式限定上述模拟器。
+- 未使用真实 Microsoft 账号进行云端端到端同步；保留原有 ETag 条件写入，实现对已下载冲突快照的版本校验。本次未发布 APK。
+
+最终模拟器测试输出见 `conflict-image-device-tests.txt`。
+
+---
+
 # 本地验证
 
 2026-10-22，macOS x86_64，Android Studio JBR 21；独立 Android 36 / Google APIs x86_64 模拟器 `cnote_android_test`，未操作实体设备或其他模拟器。

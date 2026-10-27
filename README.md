@@ -9,7 +9,7 @@
 - 无需登录即可使用。SQLite WAL + FULL 持久化；输入停止约 200 ms 后保存，连续输入约每秒生成快照。磁盘写入与 JSON 解析在后台执行。返回列表、退出、登录切换时刷新待保存内容；明确退出、删除及切换账号会等待本地保存确认。
 - 一个编辑器实例，通过可切换 Context 的包装器随 ViewModel 保留，Activity 配置重建时也保留未落盘的输入，避免持有旧 Activity。最近笔记保留实际编辑树；已缓存笔记切换不重新加载网页、不重新解析 HTML。列表不查询正文或图片。缓存仅淘汰已保存且非当前的笔记，非当前已保存缓存最多 8 篇 / 约 16 MiB；待保存草稿不会淘汰。
 - Microsoft 个人账号设备码登录，`Files.ReadWrite User.Read offline_access`，与桌面端同一个公开客户端 ID。Session 使用 Android Keystore AES-GCM 加密，凭据密钥不写入项目。关闭 Android 备份，退出登录清除凭据，账号所属笔记保留并按账号隔离。
-- OneDrive `Notes/*.html` 与桌面版/网页共用；使用 ETag 条件写入，保留同步期间的新编辑。版本冲突、远端删除、较大内容替换均需处理后才继续上传。列表底部状态或编辑菜单“处理同步问题”可操作。
+- OneDrive `Notes/*.html` 与桌面版/网页共用；使用 ETag 条件写入，保留同步期间的新编辑。本地编辑不按改动幅度拦截同步。云端版本已变化时保留双方内容并暂停覆盖，通过逐段 diff 明确选择本地或云端内容，预览合并后再应用。选择期间的本地修订或云端版本变化会拒绝过期结果；远端删除支持保留草稿重新上传或移除本机副本。列表底部状态或编辑菜单“处理同步问题”可操作。
 - 前台保存后约 2 秒尝试上传。JobScheduler 在网络可用时重试，遵循 Android 电量/后台调度限制。手动“立即同步”刷新云端列表；打开笔记时下载最新版。未下载的云端笔记在离线时保持只读。
 - 正文最大 20 MiB，单张插入图片最大 8 MiB。尚未生成快照的短暂输入在进程被系统强杀时仍可能丢失；“已保存到本机”表示 SQLite 已确认写入。
 
@@ -26,6 +26,10 @@ JDK 21、Android SDK 35；Gradle Wrapper 8.11.1 / AGP 8.10.1 / Kotlin 2.0.21。�
 ```sh
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ./gradlew connectedDebugAndroidTest
+npm ci
+npm run check:editor
+npx playwright install chromium webkit
+npm test
 ```
 
 APK：`app/build/outputs/apk/debug/app-debug.apk`。本地 SDK 路径放在忽略的 `local.properties`。
@@ -64,3 +68,10 @@ JUnit 覆盖安全文件名、大改动判定、上传确认与编辑/删除并�
 Bootstrap Icons 授权见 `app/src/main/assets/editor/Bootstrap-Icons-LICENSE.txt`。笔记图标复用自现有 CNote 项目。
 
 界面截图：[编辑器](docs/screenshots/editor.png)。
+
+### 冲突与图片交互
+
+- 冲突默认每处“待选择”，支持逐段选择或整篇选择，并显示最终保存内容与待同步状态；未处理的冲突不会上传，旧版“大幅修改确认”标记在打开数据库时清除。
+- 点击图片显示操作栏，双击或“放大查看”进入预览，支持缩放、适应窗口、原始尺寸和 Android 返回键关闭。
+- 复制将图片写入系统剪贴板，以只读授权的 FileProvider URI 供其他应用粘贴；剪切等复制成功才移除原图，失败保留原图，可撤销。编辑菜单“粘贴图片”可将剪贴板图片插入笔记。
+- 差异计算使用随 APK 打包的 `diff`（BSD，许可在编辑器资源目录），在本地 Web Worker 运行；修改源码后用 `npm run build:editor` 更新资源。

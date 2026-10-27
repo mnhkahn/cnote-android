@@ -10,13 +10,6 @@ class RulesTest {
         val n=Note(id="12345678-abcd",title="我的笔记")
         assertEquals("我的笔记--12345678.html",Rules.filename(n));assertEquals(n.title,Rules.displayTitle(Rules.filename(n)))
     }
-    @Test fun smallEditsDoNotRequireApprovalButLargeReplacementDoes() {
-        val old="<p>"+"正文".repeat(400)+"</p>"
-        assertFalse(Rules.largeChange(old,old.replaceRange(30,32,"新字")))
-        assertTrue(Rules.largeChange(old,"<p>新的一篇</p>"))
-        assertFalse(Rules.largeChange("<p>短文</p>","<p>另一个短文</p>"))
-        assertFalse(Rules.largeChange(old,old));assertTrue(Rules.largeChange(old,""))
-    }
     @Test fun uploadAcknowledgementNeverOverwritesNewerDraftOrDeletion() {
         val sent=Note(title="draft",html="old",revision=4)
         val newer=sent.copy(html="new",revision=5)

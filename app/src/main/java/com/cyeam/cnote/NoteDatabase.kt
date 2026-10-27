@@ -16,6 +16,10 @@ class NoteDatabase(context:Context,name:String="notes.db"):SQLiteOpenHelper(cont
         db.execSQL("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
     }
     override fun onUpgrade(db:SQLiteDatabase,oldVersion:Int,newVersion:Int)=Unit
+    override fun onOpen(db:SQLiteDatabase) {
+        super.onOpen(db)
+        db.execSQL("UPDATE notes SET needs_approval=0,approved_revision=-1 WHERE needs_approval<>0 OR approved_revision<>-1")
+    }
     private fun Cursor.string(name:String)=getString(getColumnIndexOrThrow(name))
     private fun Cursor.long(name:String)=getLong(getColumnIndexOrThrow(name))
     private fun Cursor.flag(name:String)=long(name)!=0L
@@ -55,13 +59,24 @@ class NoteDatabase(context:Context,name:String="notes.db"):SQLiteOpenHelper(cont
         val n=get(id)?:error("笔记不存在");require(n.account.isEmpty()||n.account==account) { "账号不匹配" }
         if(n.remoteId==null)remove(id) else put(n.copy(deleted=true,dirty=true,needsApproval=false))
     }
-    @Synchronized fun approval(id:String,revision:Long,account:String) { get(id)?.takeIf { it.account==account&&it.revision==revision }?.let { put(it.copy(approvedRevision=revision,needsApproval=false)) } }
-    @Synchronized fun needApproval(id:String,revision:Long) { get(id)?.takeIf { it.revision==revision }?.let { put(it.copy(needsApproval=true)) } }
     @Synchronized fun conflict(id:String,html:String?,etag:String?,missing:Boolean=false) { get(id)?.let { put(it.copy(deleted=false,dirty=true,conflict=true,needsApproval=false,conflictHtml=html,conflictEtag=etag,remoteMissing=missing)) } }
-    @Synchronized fun resolve(id:String,choice:String,account:String) {
-        val n=get(id)?:error("笔记不存在");require(n.account.isEmpty()||n.account==account) { "账号已切换" };require(n.conflict)
-        if(n.remoteMissing) { if(choice=="cloud")remove(id) else put(n.copy(remoteId=null,etag=null,baseline="",deleted=false,conflict=false,remoteMissing=false,dirty=true,approvedRevision=n.revision,conflictHtml=null,conflictEtag=null)) }
-        else { val html=n.conflictHtml?:error("缺少云端内容");val keep=choice!="cloud";put(n.copy(html=if(keep)n.html else html,baseline=html,etag=n.conflictEtag,conflict=false,dirty=keep,loaded=true,deleted=false,revision=if(keep)n.revision else n.revision+1,approvedRevision=n.revision,conflictHtml=null,conflictEtag=null)) }
+    @Synchronized fun resolve(id:String,choice:String,account:String,revision:Long?=null,etag:String?=null,merged:String?=null) {
+        val n=get(id)?:error("笔记不存在")
+        require(n.account.isEmpty()||n.account==account) { "账号已切换，请重新打开冲突对比" }
+        require(n.conflict) { "冲突已处理，请重新打开笔记" }
+        require(choice in setOf("mine","cloud","merge")) { "未知冲突处理方式" }
+        require(revision==null||revision==n.revision) { "本地笔记已更新，请重新打开冲突对比" }
+        require(etag==null||etag==n.conflictEtag.orEmpty()) { "云端版本已更新，请重新打开冲突对比" }
+        if(n.remoteMissing) {
+            require(choice!="merge") { "云端笔记已删除，请选择保留本地或移除副本" }
+            if(choice=="cloud")remove(id) else put(n.copy(remoteId=null,etag=null,baseline="",deleted=false,conflict=false,remoteMissing=false,dirty=true,needsApproval=false,conflictHtml=null,conflictEtag=null))
+        } else {
+            val cloud=n.conflictHtml?:error("缺少云端内容，请重新读取")
+            require(!n.conflictEtag.isNullOrEmpty()) { "缺少云端版本，请重新读取" }
+            val html=when(choice) { "cloud"->cloud;"merge"->merged?:error("缺少合并内容");else->n.html }
+            require(html.toByteArray().size<=Rules.MAX_HTML) { "合并结果超过 20 MB" }
+            put(n.copy(html=html,baseline=cloud,etag=n.conflictEtag,conflict=false,dirty=choice!="cloud",loaded=true,deleted=false,revision=n.revision+if(choice=="mine")0 else 1,needsApproval=false,conflictHtml=null,conflictEtag=null))
+        }
     }
     @Synchronized fun heads(account:String):List<RemoteHead> =readableDatabase.rawQuery("SELECT id,remote_id,etag,dirty,deleted,loaded FROM notes WHERE account=? AND remote_id IS NOT NULL",arrayOf(account)).use { c->buildList { while(c.moveToNext())add(RemoteHead(c.string("id"),c.string("remote_id"),c.string("etag"),c.flag("dirty"),c.flag("deleted"),c.flag("loaded"))) } }
     @Synchronized fun mergeRemote(account:String,item:RemoteItem):String {

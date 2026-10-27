@@ -1,0 +1,1 @@
+{"name":"cnote-android-editor-tests","private":true,"scripts":{"build:editor":"node scripts/build-editor.cjs","check:editor":"node scripts/build-editor.cjs --check","test":"node --test scripts/tests/editor.test.cjs"},"devDependencies":{"diff":"9.0.0","esbuild":"0.28.2","playwright":"1.56.1"}}

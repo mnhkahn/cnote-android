@@ -40,17 +40,23 @@ class NotebookViewModel(app:Application):AndroidViewModel(app) {
                 "delete"->repository.delete(id)
                 "list"->{repository.navigation(null,repository.intent);repository.refreshList()}
                 "sync"->(getApplication<CNoteApp>()).scope.launch { repository.sync(true) }
-                "review"->repository.showConflict(id)
-                "resolve"->repository.resolve(id,m.getString("choice"))
-                "approve"->repository.approve(id,m.getLong("revision"))
+                "review","conflict_view"->repository.showConflict(id)
+                "resolve"->repository.resolve(m)
                 "login"->repository.login()
                 "commit_login"->repository.commitLogin()
                 "cancel_login"->repository.cancelLogin()
                 "logout"->repository.logout()
-                "close","export","print","link","sidebar","image","install_update"->effects.trySend(m)
+                "image_clipboard"->copyImage(m)
+                "close","export","print","link","sidebar","image","paste_image","install_update"->effects.trySend(m)
             }
         } catch(t:Exception) { repository.error(t) }
     } }
+    private fun copyImage(message:JSONObject) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result=runCatching { ImageClipboard.copy(getApplication(),message.getString("src")) }
+            effects.trySend(JSONObject().put("type","image_clipboard_result").put("token",message.getLong("token")).put("ok",result.isSuccess).put("message",result.exceptionOrNull()?.message.orEmpty()))
+        }
+    }
     fun post(raw:String) { commands.trySend(raw) }
     fun command(type:String,data:JSONObject=JSONObject())=post(data.put("type",type).toString())
 }

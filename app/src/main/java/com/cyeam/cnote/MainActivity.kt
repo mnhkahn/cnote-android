@@ -107,7 +107,11 @@ class MainActivity:ComponentActivity() {
                 vm.promptedUpdate=state.id;showUpdateDialog()
             }
         } }
-        onBackPressedDispatcher.addCallback(this,object:OnBackPressedCallback(true){ override fun handleOnBackPressed(){if(editorVisible)showList() else if(ready)action("close") else finish()} })
+        onBackPressedDispatcher.addCallback(this,object:OnBackPressedCallback(true){ override fun handleOnBackPressed(){
+            val view=web
+            if(editorVisible&&ready&&view!=null)view.evaluateJavascript("window.cnote.dismissOverlay()"){handled->if(handled!="true")showList()}
+            else if(editorVisible)showList() else if(ready)action("close") else finish()
+        } })
         // Let the native list draw first. The one local editor is retained for every note.
         root.post { initializeEditor();if(!BuildConfig.DEBUG)app.updater.checkForUpdate() }
         vm.command("sync")
@@ -170,10 +174,10 @@ class MainActivity:ComponentActivity() {
     }
     private fun menuButton(editing:Boolean)=Button(this,null,android.R.attr.borderlessButtonStyle).apply { text="⋮";textSize=27f;setTextColor(ink);contentDescription="更多选项";layoutParams=LinearLayout.LayoutParams(dp(42),dp(48));setOnClickListener { anchor->
         val popup=PopupMenu(this@MainActivity,anchor)
-        val choices=if(editing)listOf("立即保存","处理同步问题","导出 HTML","打印笔记","删除笔记","检查更新") else listOf(if(vm.state.value.session.id.isEmpty())"登录 OneDrive" else "退出 OneDrive", "立即同步",if(app.analytics.enabled())"关闭使用统计" else "开启使用统计","检查更新","关于 CNote")
+        val choices=if(editing)listOf("立即保存","处理同步问题","导出 HTML","打印笔记","删除笔记","检查更新","粘贴图片") else listOf(if(vm.state.value.session.id.isEmpty())"登录 OneDrive" else "退出 OneDrive", "立即同步",if(app.analytics.enabled())"关闭使用统计" else "开启使用统计","检查更新","关于 CNote")
         choices.forEachIndexed { index,title->popup.menu.add(0,index,index,title) }
         popup.setOnMenuItemClickListener { item->
-            if(editing)when(item.itemId){0->action("save");1->reviewOrSync();2->js("document.getElementById('export').click()");3->js("document.getElementById('print').click()");4->action("delete");5->{app.updater.checkForUpdate(true);showUpdateDialog()}}
+            if(editing)when(item.itemId){0->action("save");1->reviewOrSync();2->js("document.getElementById('export').click()");3->js("document.getElementById('print').click()");4->action("delete");5->{app.updater.checkForUpdate(true);showUpdateDialog()};6->pasteClipboardImage()}
             else when(item.itemId){0->if(vm.state.value.session.id.isEmpty())action("login") else action("logout");1->vm.command("sync");2->{app.analytics.enabled(!app.analytics.enabled());toast(if(app.analytics.enabled())"已开启匿名使用统计" else "已关闭使用统计")};3->{app.updater.checkForUpdate(true);showUpdateDialog()};4->AlertDialog.Builder(this@MainActivity).setTitle("CNote ${BuildConfig.VERSION_NAME}").setMessage("本地优先的轻量笔记\n\n编辑自动保存到本机，可通过 OneDrive 同步 Notes 文件夹。\n\n使用统计仅记录功能事件与同步耗时，不包含笔记内容、标题或账号。\n\ncom.cyeam.cnote").setPositiveButton("知道了",null).show()}
             true
         };popup.show()
@@ -187,29 +191,42 @@ class MainActivity:ComponentActivity() {
     private fun js(script:String) { if(!ready){queued.addLast(script);return};web?.evaluateJavascript(script,null) }
     private fun syncEditorTheme() { web?.setBackgroundColor(paper);js("window.cnote.setTheme(${JSONObject.quote(if(dark)"dark" else "light")})") }
     private fun receive(event:JSONObject)=js("window.cnote.receive($event)")
-    private fun reviewOrSync() { val issue=vm.state.value.notes.firstOrNull { it.id==vm.state.value.selected&&(it.conflict||it.needsApproval) }?:vm.state.value.notes.firstOrNull { it.conflict||it.needsApproval };if(issue==null)vm.command("sync") else vm.command("review",JSONObject().put("id",issue.id)) }
+    private fun reviewOrSync() { val issue=vm.state.value.notes.firstOrNull { it.id==vm.state.value.selected&&it.conflict }?:vm.state.value.notes.firstOrNull { it.conflict };if(issue==null)vm.command("sync") else { showEditor();action("review",JSONObject().put("id",issue.id)) } }
     private fun effect(event:JSONObject) {
         when(event.getString("type")) {
             "web_ready"->{while(queued.isNotEmpty())js(queued.removeFirst());syncEditorTheme()}
             "load"->{receive(event);if(!event.isNull("id"))showEditor()}
-            "state","save_failed","error","invalidate"->receive(event)
+            "state","save_failed","error","invalidate","dialog","image_clipboard_result"->receive(event)
             "saved"->{receive(event);if(!editorVisible)vm.command("list")}
             "list","sidebar"->showList()
             "close"->finish()
             "install_update"->installUpdate()
             "link"->openLink(event.getString("url"))
+            "paste_image"->pasteClipboardImage()
             "image"->{imageNote=vm.state.value.selected;imageLauncher.launch("image/*")}
             "export"->{exportData=event.getString("title") to ("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>CNote</title></head><body>"+event.getString("html")+"</body></html>");exportLauncher.launch(event.getString("title")+".html")}
             "print"->{val view=web?:return;(getSystemService(PRINT_SERVICE) as PrintManager).print("CNote",view.createPrintDocumentAdapter("CNote"),null)}
             "login_code"->{loginDialog?.dismiss();val code=event.getString("code");val url=event.getString("url");loginDialog=AlertDialog.Builder(this).setTitle("登录 OneDrive").setMessage("在 Microsoft 登录页输入设备码：\n\n$code\n\n返回 CNote 后会自动连接。\n请使用个人 Microsoft 账号。").setNegativeButton("取消登录"){_,_->vm.command("cancel_login")}.setNeutralButton("复制设备码"){_,_->(getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Microsoft 登录码",code));showLoginAgain(code,url)}.setPositiveButton("打开登录页"){_,_->openLink(url);showLoginAgain(code,url)}.setOnCancelListener { vm.command("cancel_login") }.show() }
             "commit_login"->action("commit_login")
             "login_done"->{loginDialog?.dismiss();loginDialog=null}
-            "review"->{val id=event.getString("id");val title=event.getString("title");val approval=event.getBoolean("approval");val missing=event.getBoolean("missing")
-                val message=if(approval)"“$title”的大部分内容发生变化。本机已经保存，是否确认同步？" else if(missing)"“$title”已从 OneDrive 删除。可以保留本机内容并重新上传，或移除本机副本。" else "“$title”在其他设备上发生修改。请选择要保留的版本；也可以取消后先导出本机草稿。"
-                val builder=AlertDialog.Builder(this).setTitle(if(approval)"确认较大改动" else "处理版本冲突").setMessage(message).setNegativeButton("取消",null)
-                if(approval)builder.setPositiveButton("确认同步"){_,_->js("window.cnote.approve(${JSONObject.quote(id)},${event.getLong("revision")})")}
-                else { builder.setNeutralButton(if(missing)"移除本机副本" else "使用云端版本"){_,_->js("window.cnote.resolve(${JSONObject.quote(id)},'cloud')")};builder.setPositiveButton(if(missing)"重新上传本机笔记" else "保留我的修改"){_,_->js("window.cnote.resolve(${JSONObject.quote(id)},'mine')")} };builder.show()
-            }
+
+        }
+    }
+    private fun pasteClipboardImage() {
+        val target=vm.state.value.selected?:return
+        lifecycleScope.launch {
+            try {
+                val manager=getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clip=manager.primaryClip?:error("剪贴板中没有图片")
+                val uri=clip.getItemAt(0).uri?:error("剪贴板中没有图片")
+                require(uri.scheme=="content") { "图片地址无效" }
+                val source=withContext(Dispatchers.IO) {
+                    val mime=contentResolver.getType(uri).orEmpty();require(mime in setOf("image/png","image/jpeg","image/webp","image/gif","image/bmp")) { "剪贴板中没有支持的图片" }
+                    val bytes=contentResolver.openInputStream(uri)!!.use { it.readBytesBounded(8*1024*1024) }
+                    "data:$mime;base64,"+android.util.Base64.encodeToString(bytes,android.util.Base64.NO_WRAP)
+                }
+                if(target==vm.state.value.selected)js("window.cnote.insertImage(${JSONObject.quote(source)})")
+            }catch(t:Exception) { toast(t.message?:"图片粘贴失败") }
         }
     }
     private fun renderUpdate(state:UpdateState) {
@@ -279,9 +296,9 @@ class MainActivity:ComponentActivity() {
             container.addView(label(0xf444.toChar().toString(),25f,blue).apply { typeface=font },LinearLayout.LayoutParams(dp(44),-1))
             val texts=column();val title=label("",17f).apply { typeface=Typeface.DEFAULT_BOLD;maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END };val detail=label("",12f,muted).apply { maxLines=1 };texts.addView(title,LinearLayout.LayoutParams(-1,0,1f));texts.addView(detail,LinearLayout.LayoutParams(-1,0,1f));container.addView(texts,LinearLayout.LayoutParams(0,-1,1f));return NoteHolder(container,title,detail)
         }
-        override fun onBindViewHolder(holder:NoteHolder,position:Int) { val n=getItem(position);holder.title.text=n.title;holder.detail.text=dates.format(Date(n.modified))+" · "+if(n.conflict)"需要处理冲突" else if(n.needsApproval)"同步前确认" else if(n.dirty)"已保存到本机" else "已同步";holder.itemView.setOnClickListener { click(n) };holder.itemView.setOnLongClickListener { action("delete",JSONObject().put("id",n.id).put("title",n.title));true } }
+        override fun onBindViewHolder(holder:NoteHolder,position:Int) { val n=getItem(position);holder.title.text=n.title;holder.detail.text=dates.format(Date(n.modified))+" · "+if(n.conflict)"需要处理冲突" else if(n.dirty)"已保存到本机" else "已同步";holder.itemView.setOnClickListener { click(n) };holder.itemView.setOnLongClickListener { action("delete",JSONObject().put("id",n.id).put("title",n.title));true } }
     }
     private class NoteHolder(view:View,val title:TextView,val detail:TextView):RecyclerView.ViewHolder(view)
     companion object { const val EDITOR_URL="https://appassets.androidplatform.net/assets/editor/index.html" }
 }
-private fun java.io.InputStream.readBytesBounded(max:Int):ByteArray { val output=java.io.ByteArrayOutputStream();val buffer=ByteArray(16384);while(true){val count=read(buffer);if(count<0)break;require(output.size()+count<=max){"图片最大支持 8 MB"};output.write(buffer,0,count)};return output.toByteArray() }
+internal fun java.io.InputStream.readBytesBounded(max:Int):ByteArray { val output=java.io.ByteArrayOutputStream();val buffer=ByteArray(16384);while(true){val count=read(buffer);if(count<0)break;require(output.size()+count<=max){"图片最大支持 ${max/1024/1024} MB"};output.write(buffer,0,count)};return output.toByteArray() }

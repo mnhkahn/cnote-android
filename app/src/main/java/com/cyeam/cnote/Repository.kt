@@ -62,11 +62,11 @@ class Repository(private val context:Context,private val scope:CoroutineScope,pr
     private fun owned(n:Note) { require(n.account.isEmpty()||n.account==state.value.session.id) { "账号已切换" };require(!n.deleted) { "笔记已删除" } }
     private fun load(n:Note) { if(n.loaded)emit("load",JSONObject().put("id",n.id).put("title",n.title).put("html",n.html).put("intent",intent)) }
     fun open(id:String,cached:Boolean) {
-        if(cached) { require(db.validCached(id,state.value.session.id)) { "笔记已删除或账号已切换" };scope.launch { downloadSelected(id,false) };return }
+        if(cached) { require(db.validCached(id,state.value.session.id)) { "笔记已删除或账号已切换" };if(db.get(id)?.conflict==true)offerConflict(id) else scope.launch { downloadSelected(id,false) };return }
         val n=db.get(id)?:error("笔记不存在");owned(n)
         if(!cached&&n.loaded)load(n)
         else if(!n.loaded)status("正在下载笔记，已下载的笔记可离线使用")
-        if(n.remoteId!=null)scope.launch { downloadSelected(n.id,false) }
+        if(n.conflict)offerConflict(id) else if(n.remoteId!=null)scope.launch { downloadSelected(n.id,false) }
     }
     fun save(id:String,html:String,seq:Long) {
         try {
@@ -78,16 +78,31 @@ class Repository(private val context:Context,private val scope:CoroutineScope,pr
         db.markDeleted(id,state.value.session.id);editing.remove(id);analytics.noteDeleted();navigation(null,intent);refreshList()
         emit("load",JSONObject().put("id",JSONObject.NULL).put("intent",intent));emit("list");scheduleSync()
     }
+    private fun offerConflict(id:String) {
+        if(state.value.selected==id)emit("dialog",JSONObject().put("kind","conflict").put("data",JSONObject().put("id",id)))
+    }
     fun showConflict(id:String) {
         val n=db.get(id)?:return;owned(n)
-        if(n.conflict||n.needsApproval)emit("review",JSONObject().put("id",id).put("title",n.title).put("missing",n.remoteMissing).put("revision",n.revision).put("approval",n.needsApproval&&!n.conflict))
+        if(!n.conflict)return
+        if(!n.remoteMissing&&(n.conflictHtml==null||n.conflictEtag.isNullOrEmpty())) { scope.launch { downloadSelected(id,false);db.get(id)?.takeIf { it.conflict&&(it.remoteMissing||(it.conflictHtml!=null&&!it.conflictEtag.isNullOrEmpty())) }?.let { showConflict(id) } };return }
+        emit("dialog",JSONObject().put("kind","conflict_view").put("data",JSONObject().put("id",id).put("title",n.title).put("local",n.html).put("cloud",n.conflictHtml.orEmpty()).put("revision",n.revision).put("etag",n.conflictEtag.orEmpty()).put("missing",n.remoteMissing)))
     }
-    fun resolve(id:String,choice:String) {
-        db.resolve(id,choice,state.value.session.id);editing.remove(id);refreshList()
-        db.get(id)?.let { if(state.value.selected==id)load(it) }?:run { navigation(null,intent);emit("load",JSONObject().put("id",JSONObject.NULL));emit("list") }
-        scheduleSync()
+    fun resolve(message:JSONObject) {
+        val id=message.getString("id");val choice=message.getString("choice")
+        try {
+            synchronized(accountLock) { db.resolve(id,choice,state.value.session.id,message.getLong("revision"),message.getString("etag"),if(choice=="merge")message.getString("html") else null) }
+            editing.remove(id);refreshList()
+            val resolved=db.get(id)
+            if(resolved!=null) { if(state.value.selected==id)load(resolved) else emit("invalidate",JSONObject().put("id",id)) }
+            else { navigation(null,intent);emit("load",JSONObject().put("id",JSONObject.NULL));emit("list") }
+            val pending=resolved?.dirty==true
+            status(if(pending)"已保存你的选择到本机 · 等待同步 OneDrive" else "已应用你的选择")
+            emit("dialog",JSONObject().put("kind","conflict_result").put("data",JSONObject().put("id",id).put("ok",true).put("choice",choice).put("html",resolved?.html.orEmpty()).put("pending_sync",pending).put("removed",resolved==null)))
+            scheduleSync()
+        }catch(t:Exception) {
+            emit("dialog",JSONObject().put("kind","conflict_result").put("data",JSONObject().put("id",id).put("ok",false).put("message",t.message.orEmpty())))
+        }
     }
-    fun approve(id:String,revision:Long) { db.approval(id,revision,state.value.session.id);refreshList();scheduleSync() }
     fun login() {
         if(loggingIn)return
         loggingIn=true
@@ -133,7 +148,6 @@ class Repository(private val context:Context,private val scope:CoroutineScope,pr
                     val conflict=graph.delete(sent,epoch)
                     synchronized(accountLock) { graph.check(epoch);if(conflict==null)db.remove(sent.id) else db.conflict(sent.id,conflict.html,conflict.etag) }
                 } else {
-                    if(sent.remoteId!=null&&sent.approvedRevision!=sent.revision&&Rules.largeChange(sent.baseline,sent.html)) { db.needApproval(sent.id,sent.revision);continue }
                     val result=graph.upload(sent,epoch)
                     synchronized(accountLock) {
                         graph.check(epoch)
@@ -157,8 +171,9 @@ class Repository(private val context:Context,private val scope:CoroutineScope,pr
             }
             graph.check(epoch);refreshList()
             if(refresh)state.value.selected?.let { downloadSelected(it,true) }
-            val blocked=state.value.notes.count { it.conflict||it.needsApproval }
-            status(if(blocked>0)"$blocked 篇笔记需要确认 · 点击同步状态处理" else "已同步 OneDrive")
+            state.value.selected?.let { if(db.get(it)?.conflict==true)offerConflict(it) }
+            val blocked=state.value.notes.count { it.conflict }
+            status(if(blocked>0)"$blocked 篇笔记有冲突 · 点击同步状态处理" else "已同步 OneDrive")
             analytics.sync(if(refresh)"refresh" else "upload","success",System.currentTimeMillis()-started)
             false
         } catch(t:Exception) {
@@ -178,6 +193,7 @@ class Repository(private val context:Context,private val scope:CoroutineScope,pr
                     val changed=db.downloaded(id,content.html,content.etag,editing.contains(id))
                     if(changed) { if(state.value.selected==id)db.get(id)?.let(::load) else emit("invalidate",JSONObject().put("id",id)) }
                     refreshList()
+                    if(db.get(id)?.conflict==true)offerConflict(id)
                 }
             } catch(t:Exception) { if(graph.valid(epoch)) { if(t is GraphFailure&&t.status==404)db.conflict(id,null,null,true);error(t) } }
         }
