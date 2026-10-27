@@ -6,16 +6,26 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class NoteDatabase(context:Context,name:String="notes.db"):SQLiteOpenHelper(context,name,null,1) {
+class NoteDatabase(context:Context,name:String="notes.db"):SQLiteOpenHelper(context,name,null,2) {
     init { setWriteAheadLoggingEnabled(true) }
     override fun onConfigure(db:SQLiteDatabase) { db.execSQL("PRAGMA synchronous=FULL");db.rawQuery("PRAGMA busy_timeout=5000",null).use { it.moveToFirst() } }
     override fun onCreate(db:SQLiteDatabase) {
-        db.execSQL("""CREATE TABLE notes(id TEXT PRIMARY KEY,account TEXT NOT NULL DEFAULT '',remote_id TEXT,title TEXT NOT NULL,html TEXT NOT NULL,baseline TEXT NOT NULL,etag TEXT,revision INTEGER NOT NULL,dirty INTEGER NOT NULL,deleted INTEGER NOT NULL,conflict INTEGER NOT NULL,modified INTEGER NOT NULL,loaded INTEGER NOT NULL,approved_revision INTEGER NOT NULL DEFAULT -1,needs_approval INTEGER NOT NULL DEFAULT 0,conflict_html TEXT,conflict_etag TEXT,remote_missing INTEGER NOT NULL DEFAULT 0)""")
+        db.execSQL("""CREATE TABLE notes(id TEXT PRIMARY KEY,account TEXT NOT NULL DEFAULT '',remote_id TEXT,title TEXT NOT NULL,heading TEXT NOT NULL DEFAULT '',html TEXT NOT NULL,baseline TEXT NOT NULL,etag TEXT,revision INTEGER NOT NULL,dirty INTEGER NOT NULL,deleted INTEGER NOT NULL,conflict INTEGER NOT NULL,modified INTEGER NOT NULL,loaded INTEGER NOT NULL,approved_revision INTEGER NOT NULL DEFAULT -1,needs_approval INTEGER NOT NULL DEFAULT 0,conflict_html TEXT,conflict_etag TEXT,remote_missing INTEGER NOT NULL DEFAULT 0)""")
         db.execSQL("CREATE UNIQUE INDEX remote_note ON notes(account,remote_id)")
         db.execSQL("CREATE INDEX note_list ON notes(account,deleted,modified DESC)")
         db.execSQL("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
     }
-    override fun onUpgrade(db:SQLiteDatabase,oldVersion:Int,newVersion:Int)=Unit
+    override fun onUpgrade(db:SQLiteDatabase,oldVersion:Int,newVersion:Int) {
+        if(oldVersion<2) {
+            db.execSQL("ALTER TABLE notes ADD COLUMN heading TEXT NOT NULL DEFAULT ''")
+            // Fetch bodies individually so inline images cannot overflow CursorWindow.
+            val ids=db.rawQuery("SELECT id FROM notes WHERE loaded=1",null).use { c->buildList { while(c.moveToNext())add(c.getString(0)) } }
+            for(id in ids) {
+                val html=db.compileStatement("SELECT html FROM notes WHERE id=?").use { it.bindString(1,id);it.simpleQueryForString() }
+                db.update("notes",ContentValues().apply { put("heading",NoteTitle.heading(html)) },"id=?",arrayOf(id))
+            }
+        }
+    }
     override fun onOpen(db:SQLiteDatabase) {
         super.onOpen(db)
         db.execSQL("UPDATE notes SET needs_approval=0,approved_revision=-1 WHERE needs_approval<>0 OR approved_revision<>-1")
@@ -32,7 +42,7 @@ class NoteDatabase(context:Context,name:String="notes.db"):SQLiteOpenHelper(cont
     @Synchronized fun findRemote(account:String,remote:String):Note?=readableDatabase.rawQuery("SELECT $metadata FROM notes WHERE account=? AND remote_id=?",arrayOf(account,remote)).use { if(it.moveToFirst())it.note() else null }
     @Synchronized fun put(n:Note) {
         val v=ContentValues().apply {
-            put("id",n.id);put("account",n.account);put("remote_id",n.remoteId);put("title",n.title);put("html",n.html);put("baseline",n.baseline);put("etag",n.etag)
+            put("id",n.id);put("account",n.account);put("remote_id",n.remoteId);put("title",n.title);put("heading",if(n.loaded)NoteTitle.heading(n.html) else "");put("html",n.html);put("baseline",n.baseline);put("etag",n.etag)
             put("revision",n.revision);put("dirty",n.dirty);put("deleted",n.deleted);put("conflict",n.conflict);put("modified",n.modified);put("loaded",n.loaded)
             put("approved_revision",n.approvedRevision);put("needs_approval",n.needsApproval);put("conflict_html",n.conflictHtml);put("conflict_etag",n.conflictEtag);put("remote_missing",n.remoteMissing)
         }
@@ -41,12 +51,14 @@ class NoteDatabase(context:Context,name:String="notes.db"):SQLiteOpenHelper(cont
     @Synchronized fun create(title:String,account:String)=Note(account=account,title=Rules.title(title)).also(::put)
     @Synchronized fun saveHtml(id:String,account:String,html:String) {
         require(html.toByteArray().size<=Rules.MAX_HTML) { "笔记超过 20 MB，请缩小图片或分篇保存" }
-        writableDatabase.compileStatement("""UPDATE notes SET revision=revision+CASE WHEN html<>?1 THEN 1 ELSE 0 END,dirty=CASE WHEN html<>?1 THEN 1 ELSE dirty END,modified=CASE WHEN html<>?1 THEN ?2 ELSE modified END,html=?1 WHERE id=?3 AND deleted=0 AND loaded=1 AND (account='' OR account=?4)""").use {
-            it.bindString(1,html);it.bindLong(2,System.currentTimeMillis());it.bindString(3,id);it.bindString(4,account)
+        val heading=NoteTitle.heading(html)
+        writableDatabase.compileStatement("""UPDATE notes SET heading=?5,revision=revision+CASE WHEN html<>?1 THEN 1 ELSE 0 END,dirty=CASE WHEN html<>?1 THEN 1 ELSE dirty END,modified=CASE WHEN html<>?1 THEN ?2 ELSE modified END,html=?1 WHERE id=?3 AND deleted=0 AND loaded=1 AND (account='' OR account=?4)""").use {
+            it.bindString(1,html);it.bindLong(2,System.currentTimeMillis());it.bindString(3,id);it.bindString(4,account);it.bindString(5,heading)
             check(it.executeUpdateDelete()==1) { "笔记已删除、账号已切换或内容尚未加载；草稿仍保留在内存中" }
         }
     }
-    @Synchronized fun list(account:String):List<Summary> =readableDatabase.rawQuery("SELECT id,title,modified,dirty,conflict,needs_approval FROM notes WHERE deleted=0 AND (account='' OR account=?) ORDER BY modified DESC,id",arrayOf(account)).use { c->buildList { while(c.moveToNext())add(Summary(c.string("id"),c.string("title"),c.long("modified"),c.flag("dirty"),c.flag("conflict"),c.flag("needs_approval"))) } }
+    @Synchronized fun list(account:String):List<Summary> =readableDatabase.rawQuery("SELECT id,COALESCE(NULLIF(heading,''),title) AS title,modified,dirty,conflict,needs_approval FROM notes WHERE deleted=0 AND (account='' OR account=?) ORDER BY modified DESC,id",arrayOf(account)).use { c->buildList { while(c.moveToNext())add(Summary(c.string("id"),c.string("title"),c.long("modified"),c.flag("dirty"),c.flag("conflict"),c.flag("needs_approval"))) } }
+    @Synchronized fun displayTitle(id:String):String=readableDatabase.rawQuery("SELECT COALESCE(NULLIF(heading,''),title) FROM notes WHERE id=?",arrayOf(id)).use { c->check(c.moveToFirst());c.getString(0) }
     @Synchronized fun pendingIds(account:String):List<String> =readableDatabase.rawQuery("SELECT id FROM notes WHERE dirty=1 AND conflict=0 AND (account='' OR account=?)",arrayOf(account)).use { c->buildList { while(c.moveToNext())add(c.getString(0)) } }
     @Synchronized fun pending(account:String):List<Note> =readableDatabase.rawQuery("SELECT $metadata FROM notes WHERE dirty=1 AND conflict=0 AND (account='' OR account=?)",arrayOf(account)).use { c->buildList { while(c.moveToNext())add(c.note()) } }
     @Synchronized fun remoteNotes(account:String):List<Note> =readableDatabase.rawQuery("SELECT $metadata FROM notes WHERE account=? AND remote_id IS NOT NULL",arrayOf(account)).use { c->buildList { while(c.moveToNext())add(c.note()) } }

@@ -35,6 +35,15 @@ for(const [name,type]of [['Chromium',chromium],['WebKit',webkit]])test(name+' mo
   await page.evaluate(()=>document.execCommand('undo'));assert.equal(await page.locator('#editor img').count(),1);await page.evaluate(()=>cnote.flush());await page.waitForTimeout(30);
   const html=await page.evaluate(()=>messages.filter(m=>m.type==='change'&&m.id==='image').at(-1).html);assert(html.includes(src));assert(!html.includes('image-actions'));
  });
+ await t.test('saved body title is used by export and stale acknowledgements cannot replace it',async()=>{
+  await receive({type:'load',id:'title',title:'文件名',html:'<h1>正文标题</h1>'});
+  await page.locator('#editor').fill('修改标题');await page.evaluate(()=>cnote.flush());
+  const change=await page.evaluate(()=>messages.filter(m=>m.type==='change'&&m.id==='title').at(-1));
+  await receive({type:'saved',id:'title',seq:change.seq,title:'正文新标题'});
+  await receive({type:'saved',id:'title',seq:change.seq-1,title:'过期标题'});
+  await page.evaluate(()=>document.getElementById('export').click());await page.waitForFunction(()=>messages.some(m=>m.type==='export'&&m.id==='title'));
+  assert.equal(await page.evaluate(()=>messages.filter(m=>m.type==='export'&&m.id==='title').at(-1).title),'正文新标题');
+ });
  assert.deepEqual(errors,[]);
  }finally{await browser.close();}
 });

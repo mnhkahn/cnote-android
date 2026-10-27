@@ -366,6 +366,7 @@
    case 'saved':{
     const n=notes.get(e.id);if(!n)break;
     n.saved=Math.max(n.saved,Math.min(n.seq,e.seq));
+    if(e.title!==undefined&&e.seq===n.seq)n.title=e.title;
     if(!pending(n)){pendingWrites.delete(n.id);post({type:'settled',id:n.id});prune();}
     if(!pendingWrites.size){updateGuard();if(pendingAction){const next=pendingAction;pendingAction=null;queueMicrotask(next);}}
     if(n===active){document.getElementById('status').textContent='已保存到本机';document.getElementById('status').style.color='';}

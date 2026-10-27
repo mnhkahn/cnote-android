@@ -66,6 +66,35 @@ class StorageTest {
         val n=db.create("图片","a");db.saveHtml(n.id,"a",html);db.close();db=NoteDatabase(context,name)
         assertEquals(html,db.get(n.id)!!.html);assertEquals(html,db.pending("a").single().html)
     }
+    @Test fun bodyTitleSurvivesEditingSyncConflictAndReopenWithoutRenamingTheFile() {
+        val id=db.mergeRemote("a",RemoteItem("remote","文件名称--12345678.html","v1",100))
+        db.downloaded(id,"<h1>正文标题</h1><p>正文</p>","v1",false)
+        assertEquals("正文标题",db.list("a").single().title)
+        assertEquals("文件名称",db.get(id)!!.title)
+        db.mergeRemote("a",RemoteItem("remote","文件名称--12345678.html","v1",100))
+        assertEquals("正文标题",db.displayTitle(id))
+        db.saveHtml(id,"a","<h2>修改 / 标题 &amp; 更多</h2>")
+        assertEquals("修改 / 标题 & 更多",db.list("a").single().title)
+        db.conflict(id,"<h1>云端标题</h1>","v2");db.resolve(id,"cloud","a")
+        assertEquals("云端标题",db.displayTitle(id))
+        db.close();db=NoteDatabase(context,name)
+        assertEquals("云端标题",db.list("a").single().title)
+        db.saveHtml(id,"a","<p>移除标题</p>")
+        assertEquals("文件名称",db.displayTitle(id))
+    }
+    @Test fun versionOneDatabaseBackfillsTitlesWithoutChangingContentOrSyncState() {
+        db.close();context.deleteDatabase(name)
+        val legacy=android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(name),null)
+        // Reproduce the previous schema, then open it with the new helper.
+        db.onCreate(legacy)
+        val schema=legacy.rawQuery("SELECT sql FROM sqlite_master WHERE name='notes'",null).use { it.moveToFirst();it.getString(0) }.replace("heading TEXT NOT NULL DEFAULT '',", "")
+        legacy.execSQL("DROP TABLE notes");legacy.execSQL(schema)
+        legacy.execSQL("INSERT INTO notes(id,account,title,html,baseline,revision,dirty,deleted,conflict,modified,loaded) VALUES('legacy','a','旧文件名','<h1>已有正文标题</h1>','baseline',7,0,0,0,100,1)")
+        legacy.version=1;legacy.close();db=NoteDatabase(context,name)
+        assertEquals("已有正文标题",db.list("a").single().title)
+        val note=db.get("legacy")!!
+        assertEquals("旧文件名",note.title);assertEquals(7L,note.revision);assertFalse(note.dirty);assertEquals("baseline",note.baseline)
+    }
     @Test fun sessionIsAuthenticatedEncryptionAndCanBeRestored() {
         val prefsName="vault-test-${System.nanoTime()}";val vault=TokenVault(context,prefsName)
         val tokens=Tokens("test-access-only","test-refresh-only",12345)

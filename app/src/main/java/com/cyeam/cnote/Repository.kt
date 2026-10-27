@@ -60,7 +60,7 @@ class Repository(private val context:Context,private val scope:CoroutineScope,pr
         val n=db.create(title,state.value.session.id);analytics.noteCreated();refreshList();navigation(n.id,intent+1);load(n);scheduleSync()
     }
     private fun owned(n:Note) { require(n.account.isEmpty()||n.account==state.value.session.id) { "账号已切换" };require(!n.deleted) { "笔记已删除" } }
-    private fun load(n:Note) { if(n.loaded)emit("load",JSONObject().put("id",n.id).put("title",n.title).put("html",n.html).put("intent",intent)) }
+    private fun load(n:Note) { if(n.loaded)emit("load",JSONObject().put("id",n.id).put("title",db.displayTitle(n.id)).put("html",n.html).put("intent",intent)) }
     fun open(id:String,cached:Boolean) {
         if(cached) { require(db.validCached(id,state.value.session.id)) { "笔记已删除或账号已切换" };if(db.get(id)?.conflict==true)offerConflict(id) else scope.launch { downloadSelected(id,false) };return }
         val n=db.get(id)?:error("笔记不存在");owned(n)
@@ -71,7 +71,7 @@ class Repository(private val context:Context,private val scope:CoroutineScope,pr
     fun save(id:String,html:String,seq:Long) {
         try {
             db.saveHtml(id,state.value.session.id,html)
-            emit("saved",JSONObject().put("id",id).put("seq",seq));status("已保存到本机");scheduleSync()
+            refreshList();emit("saved",JSONObject().put("id",id).put("seq",seq).put("title",db.displayTitle(id)));status("已保存到本机");scheduleSync()
         } catch(t:Exception) { emit("save_failed",JSONObject().put("id",id).put("seq",seq).put("message",t.message.orEmpty())) }
     }
     fun delete(id:String) {
@@ -85,7 +85,7 @@ class Repository(private val context:Context,private val scope:CoroutineScope,pr
         val n=db.get(id)?:return;owned(n)
         if(!n.conflict)return
         if(!n.remoteMissing&&(n.conflictHtml==null||n.conflictEtag.isNullOrEmpty())) { scope.launch { downloadSelected(id,false);db.get(id)?.takeIf { it.conflict&&(it.remoteMissing||(it.conflictHtml!=null&&!it.conflictEtag.isNullOrEmpty())) }?.let { showConflict(id) } };return }
-        emit("dialog",JSONObject().put("kind","conflict_view").put("data",JSONObject().put("id",id).put("title",n.title).put("local",n.html).put("cloud",n.conflictHtml.orEmpty()).put("revision",n.revision).put("etag",n.conflictEtag.orEmpty()).put("missing",n.remoteMissing)))
+        emit("dialog",JSONObject().put("kind","conflict_view").put("data",JSONObject().put("id",id).put("title",db.displayTitle(n.id)).put("local",n.html).put("cloud",n.conflictHtml.orEmpty()).put("revision",n.revision).put("etag",n.conflictEtag.orEmpty()).put("missing",n.remoteMissing)))
     }
     fun resolve(message:JSONObject) {
         val id=message.getString("id");val choice=message.getString("choice")
@@ -158,8 +158,9 @@ class Repository(private val context:Context,private val scope:CoroutineScope,pr
                     }
                 }
             }
+            var refreshedCloud=emptyList<RemoteItem>()
             if(refresh) {
-                val cloud=graph.list(epoch);val ids=cloud.map { it.id }.toHashSet()
+                val cloud=graph.list(epoch);refreshedCloud=cloud;val ids=cloud.map { it.id }.toHashSet()
                 synchronized(accountLock) {
                     graph.check(epoch)
                     for(head in db.heads(session.id))if(head.remoteId !in ids) {
@@ -170,7 +171,15 @@ class Repository(private val context:Context,private val scope:CoroutineScope,pr
                 }
             }
             graph.check(epoch);refreshList()
-            if(refresh)state.value.selected?.let { downloadSelected(it,true) }
+            if(refresh) {
+                // Fetch new/changed bodies to resolve labels before a note is opened.
+                val heads=db.heads(session.id).associateBy { it.remoteId }
+                for(item in refreshedCloud) {
+                    val head=heads[item.id]?:continue
+                    if(!head.deleted&&(!head.loaded||head.etag!=item.etag))downloadSelected(head.id,true)
+                }
+                state.value.selected?.let { downloadSelected(it,true) }
+            }
             state.value.selected?.let { if(db.get(it)?.conflict==true)offerConflict(it) }
             val blocked=state.value.notes.count { it.conflict }
             status(if(blocked>0)"$blocked 篇笔记有冲突 · 点击同步状态处理" else "已同步 OneDrive")
