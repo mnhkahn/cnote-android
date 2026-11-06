@@ -1,11 +1,108 @@
 [hidden]{display:none!important}:root{--active:var(--selected)}
 body{font-family:system-ui,sans-serif;height:100dvh;-webkit-tap-highlight-color:transparent}header{padding:3px 8px;min-height:47px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}header::-webkit-scrollbar{display:none}#toolbar{flex-wrap:nowrap;flex-shrink:0;gap:1px}button{min-width:40px;height:40px;font-size:17px;flex-shrink:0}button .bi{font-size:19px}.separator{margin:10px 5px}article{padding:24px 22px 70px;max-width:850px}.note-editor{font-size:17px;line-height:1.8;min-height:45vh}.editor-stack{min-height:45vh}.note-editor input[type=checkbox]{width:19px;height:19px;vertical-align:middle}.note-editor td,.note-editor th{padding:7px}.note-editor table{display:block;overflow-x:auto}footer{min-height:29px;padding:7px 14px;font-size:11px;gap:10px}#dialog-actions{flex-wrap:wrap}#dialog-actions button{font-size:14px;padding:0 12px}dialog{padding:22px}#context button{font-size:14px}#empty h1{font-size:25px}#empty p{font-size:14px}
 
-/* Conflict comparison uses the current palette and keeps long notes scrollable. */
-dialog.conflict-dialog{width:min(1100px,94vw);max-height:90vh;overflow:auto}dialog.conflict-dialog h3{font-size:14px;margin:12px 0}.conflict-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}.conflict-change{border-top:1px solid var(--line);padding:8px 0}.conflict-version{border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}.conflict-version.mine{background:color-mix(in srgb,#dc3545 8%,var(--bg))}.conflict-version.cloud{background:color-mix(in srgb,#198754 8%,var(--bg))}.conflict-version button[aria-pressed=true]{background:var(--active);color:var(--accent)}.conflict-content{overflow-wrap:anywhere;max-height:240px;overflow:auto;white-space:pre-wrap;font-size:14px;line-height:1.6}.conflict-content img{max-width:100%}.conflict-preview{border:1px solid var(--line);border-radius:8px;padding:16px;min-height:80px;max-height:320px;overflow:auto}.conflict-dialog #dialog-actions{position:sticky;bottom:-26px;background:var(--bg);padding:12px 0;flex-wrap:wrap}.conflict-dialog button:disabled{opacity:.45;cursor:wait}@media(max-width:650px){.conflict-columns{grid-template-columns:minmax(0,1fr)}}
+/* The deleted-cloud flow keeps its compact confirmation dialog. */
+dialog.conflict-dialog{width:96vw;max-height:90dvh;overflow:auto}
 
 .note-editor img{cursor:zoom-in}#image-selection{position:fixed;z-index:14;border:2px solid var(--accent);border-radius:8px;pointer-events:none;box-shadow:0 0 0 3px var(--active)}#image-actions{position:fixed;z-index:15;display:flex;gap:2px;max-width:calc(100vw - 16px);flex-wrap:wrap;padding:5px;border:1px solid var(--line);border-radius:9px;background:var(--bg);box-shadow:0 5px 20px #17263d25}#image-actions button{font-size:12px;color:var(--ink)}#image-actions button:disabled{opacity:.45}dialog.image-dialog{width:min(1200px,95vw);max-height:94vh;overflow:auto}.image-view-frame{height:65vh;overflow:auto;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px;display:block}.image-view-frame img{display:block;max-width:none!important;height:auto;margin:auto}.image-dialog #dialog-actions{flex-wrap:wrap}.image-dialog #dialog-body>p{font-size:12px;color:var(--muted)}@media print{#image-selection,#image-actions{display:none!important}}body.tools-open #image-selection,body.tools-open #image-actions{display:none!important}
 
 #image-actions button{height:44px;min-width:44px;font-size:13px}dialog.conflict-dialog,dialog.image-dialog{width:96vw;max-height:90dvh;padding:16px}.conflict-content{max-height:220px}.conflict-preview{min-height:80px;max-height:28dvh}.conflict-dialog #dialog-actions{bottom:-16px;padding-bottom:8px}.image-view-frame{height:60dvh}#dialog-actions button{min-height:44px}.conflict-dialog h3{font-size:14px}.conflict-version button{font-size:14px}.image-dialog #dialog-actions button{flex:1}#image-actions{max-width:calc(100vw - 12px)}
 
 .image-dialog #dialog-actions button{flex:1 1 28%;white-space:nowrap;font-size:13px}
+
+/* Continuous merge editor: source / arrow gutter / result / gutter / source. */
+dialog.conflict-merge-dialog{width:min(1440px,96vw);height:min(800px,92vh);max-height:92vh;padding:0;border-radius:6px;overflow:hidden}
+dialog.conflict-merge-dialog[open]{display:flex;flex-direction:column}
+.conflict-merge-dialog #dialog-title{font-size:14px;font-weight:600;margin:0;padding:13px 16px;border-bottom:1px solid var(--line)}
+.conflict-merge-dialog #dialog-body{display:flex;flex-direction:column;flex:1;min-height:0}
+.conflict-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 12px;background:var(--soft);border-bottom:1px solid var(--line)}
+.conflict-toolbar p{font-size:12px;margin:0;color:var(--muted)}
+.conflict-toolbar button{font-size:12px;height:28px;color:var(--ink)}
+.conflict-hint{font-size:11px;color:var(--muted);margin:0;padding:7px 14px}
+.conflict-changes{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--bg)}
+.conflict-columns{flex:none;display:grid;grid-template-columns:minmax(0,1fr) 26px minmax(0,1fr) 26px minmax(0,1fr);gap:0;min-width:760px;align-items:stretch}
+.conflict-headings{height:32px;position:sticky;top:0;z-index:1;background:var(--soft);border-bottom:1px solid var(--line);font-size:12px}
+.conflict-headings strong{display:flex;align-items:center;padding-left:12px;font-weight:500}
+.conflict-headings strong:nth-child(3){background:var(--active)}
+.conflict-headings>span{background:var(--soft);border-inline:1px solid var(--line)}
+.conflict-context,.conflict-change{padding:0;min-width:760px}
+.conflict-version{display:flex;min-width:0;padding:0;border:0;border-radius:0;background:var(--bg);font:12px/22px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.conflict-change .conflict-version{border-block:1px solid color-mix(in srgb,var(--ink) 9%,transparent)}
+.conflict-change .mine{background:color-mix(in srgb,#d75b60 12%,var(--bg))}
+.conflict-change .cloud{background:color-mix(in srgb,#50a06c 12%,var(--bg))}
+.conflict-change .result{background:color-mix(in srgb,var(--accent) 9%,var(--bg))}
+.conflict-change .result.unresolved{color:var(--muted);font-size:11px;padding:0 10px;align-items:center}
+.conflict-version.selected{box-shadow:inset 2px 0 var(--accent)}
+.conflict-line-numbers{flex:none;width:36px;text-align:right;padding-right:9px;background:color-mix(in srgb,var(--ink) 3%,transparent);color:var(--muted);user-select:none;border-right:1px solid var(--line)}
+.conflict-line-numbers:before{content:attr(data-line)}
+.conflict-code-row{display:grid;grid-template-columns:36px minmax(0,1fr);min-height:22px;white-space:normal}
+.conflict-code-text{white-space:pre-wrap;overflow-wrap:anywhere;padding:0 10px}
+pre.conflict-content{padding:0}
+.conflict-content{max-height:none;overflow:visible;margin:0;padding:0 10px;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0;flex:1;line-height:22px;font:inherit}
+.conflict-content img{max-width:100%}
+.conflict-content p,.conflict-content div{margin:0}
+.conflict-tag{color:var(--muted)}
+.conflict-columns>span{background:var(--soft);border-inline:1px solid var(--line)}
+.conflict-arrow{align-self:start;border:0;border-radius:0;min-width:26px;width:26px;height:24px;margin:0;padding:0;font-size:19px;line-height:22px;color:var(--accent);background:var(--soft)}
+.conflict-arrow:hover,.conflict-arrow[aria-pressed=true]{background:var(--active);color:var(--accent)}
+.conflict-preview-toggle{flex:none;font-size:12px;max-height:28vh;overflow:auto}
+.conflict-preview-toggle>summary{padding:9px 14px;color:var(--muted);cursor:pointer}
+.conflict-preview{padding:12px 18px;min-height:60px;max-height:240px;overflow:auto;border-top:1px solid var(--line)}
+.conflict-merge-dialog #dialog-actions{flex:none;margin:0;padding:10px 12px;border-top:1px solid var(--line);gap:8px;flex-wrap:wrap}
+.conflict-merge-dialog #dialog-actions button{font-size:12px}
+.conflict-merge-dialog button:disabled{opacity:.45;cursor:default}
+
+.conflict-tail{flex:1;min-height:80px}.conflict-tail>div{border-right:1px solid var(--line)}
+.conflict-preview-toggle[open]{flex-shrink:0}
+
+.conflict-change>h3{display:none}
+.conflict-arrow-label{display:none}
+.conflict-merge-dialog #dialog-actions button{min-height:44px}
+.conflict-merge-dialog #dialog-body>p:not(.conflict-hint){padding:8px 14px}
+/* The phone uses one continuous unified diff, with choices in its gutter. */
+.conflict-inline-symbol{display:none}
+.conflict-content mark{background:color-mix(in srgb,#dc555c 22%,transparent);color:inherit;border-radius:2px}
+.cloud .conflict-content mark{background:color-mix(in srgb,#49b661 28%,transparent)}
+@media(max-width:700px){
+ dialog.conflict-merge-dialog{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border:0;border-radius:0}
+ .conflict-merge-dialog #dialog-title{padding:14px 16px;font-size:16px}
+ .conflict-toolbar{gap:4px;flex-wrap:wrap;padding:2px 8px;background:var(--bg)}
+ .conflict-toolbar p{font-size:11px}
+ .conflict-toolbar button{min-height:44px}
+ .conflict-hint{display:none}
+ .conflict-columns{grid-template-columns:40px minmax(0,1fr);min-width:0}
+ .conflict-change,.conflict-context{min-width:0}
+ .conflict-headings,.conflict-change>h3{display:none}
+ .conflict-context .mine,.conflict-context .cloud,.conflict-context .conflict-columns>span{display:none}
+ .conflict-context .result{grid-column:2;background:var(--bg)}
+ .conflict-change .conflict-version{border:0;position:relative;cursor:pointer}
+ .conflict-change .conflict-version.mine{grid-column:2;grid-row:1}
+ .conflict-change .conflict-version.cloud{grid-column:2;grid-row:2}
+ .conflict-change .conflict-version.result{display:none}
+ .conflict-version.selected{box-shadow:none}
+ .conflict-change .conflict-gutter{border:0;display:flex}
+ .conflict-change .conflict-gutter.mine{grid-column:1;grid-row:1;background:color-mix(in srgb,#d75b60 12%,var(--bg))}
+ .conflict-change .conflict-gutter.cloud{grid-column:1;grid-row:2;background:color-mix(in srgb,#50a06c 12%,var(--bg))}
+ .conflict-arrow{display:flex;align-self:stretch;min-width:40px;width:40px;height:auto;min-height:44px;font-size:23px;justify-content:center;align-items:flex-start;padding-top:5px;background:transparent}
+ .conflict-arrow.mine{color:color-mix(in srgb,#b62d38 85%,var(--ink))}
+ .conflict-arrow.cloud{color:color-mix(in srgb,#27813d 85%,var(--ink))}
+ .conflict-arrow:hover,.conflict-arrow[aria-pressed=true]{background:transparent}
+ .conflict-arrow-symbol,.conflict-arrow-label{display:none}
+ .conflict-inline-symbol{display:inline;line-height:30px}
+ .conflict-content{font-size:15px;line-height:28px}
+ .conflict-line-numbers{width:28px;padding-right:6px;border:0;background:transparent;font-size:13px}
+ .conflict-code-row{grid-template-columns:28px minmax(0,1fr);min-height:28px}
+ .conflict-change .conflict-content{padding-block:7px}
+ .conflict-code-text{padding:0 12px 0 4px}
+ .conflict-tag{color:inherit;opacity:.7}
+ .conflict-tail{display:none}
+ .conflict-merge-dialog #dialog-actions{display:grid;grid-template-columns:1fr 1fr;padding:8px;gap:4px}
+ .conflict-merge-dialog #dialog-actions .primary{grid-column:2;grid-row:1}
+ .conflict-merge-dialog #dialog-actions button{font-size:12px;padding:0 6px}
+ .conflict-preview-toggle{max-height:30dvh}
+}
+
+@media(min-width:701px){
+ .conflict-columns{grid-template-columns:minmax(0,1fr) 44px minmax(0,1fr) 44px minmax(0,1fr)}
+ .conflict-arrow{min-width:44px;width:44px;height:44px}
+}

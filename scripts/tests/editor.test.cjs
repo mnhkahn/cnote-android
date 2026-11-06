@@ -14,10 +14,43 @@ for(const [name,type]of [['Chromium',chromium],['WebKit',webkit]])test(name+' mo
   const local='<h1>共同</h1><p><b>本地</b></p><p>中间</p><p>本地尾部</p>',cloud='<h1>共同</h1><p><i>云端</i></p><p>中间</p><p>云端尾部</p>';
   await receive({type:'load',id:'conflict',title:'冲突',html:local});await receive({type:'dialog',kind:'conflict_view',data:{id:'conflict',title:'冲突',local,cloud,revision:3,etag:'v2'}});
   await page.waitForFunction(()=>document.querySelectorAll('.conflict-change').length===2);assert(await page.getByRole('button',{name:'保存合并结果',exact:true}).isDisabled());
+  const portrait=await page.locator('.conflict-change').first().evaluate(section=>{
+   const bounds=selector=>section.querySelector(selector).getBoundingClientRect();
+   const local=bounds('.conflict-version.mine'),result=bounds('.conflict-version.result'),cloud=bounds('.conflict-version.cloud'),arrow=bounds('.conflict-arrow.mine');
+   return {unified:local.bottom<=cloud.top&&local.left===cloud.left,resultHidden:result.height===0,touchHeight:arrow.height,fits:section.getBoundingClientRect().right<=innerWidth};
+  });assert(portrait.unified);assert(portrait.resultHidden);assert(portrait.touchHeight>=44);assert(portrait.fits);
   await page.locator('.conflict-change').first().getByRole('button',{name:'选择云端',exact:true}).tap();await page.locator('.conflict-change').nth(1).getByRole('button',{name:'选择本地',exact:true}).tap();
   const expected='<h1>共同</h1><p><i>云端</i></p><p>中间</p><p>本地尾部</p>';assert.equal(await page.locator('.conflict-preview').innerHTML(),expected);
+  for(const width of [360,844,1024,390]){
+   await page.setViewportSize({width,height:width>700?500:844});
+   const layout=await page.locator('.conflict-change').first().evaluate(section=>{
+    const local=section.querySelector('.conflict-version.mine').getBoundingClientRect(),result=section.querySelector('.conflict-version.result').getBoundingClientRect(),cloud=section.querySelector('.conflict-version.cloud').getBoundingClientRect();
+    return {unified:local.bottom<=cloud.top&&local.left===cloud.left&&result.height===0,columns:local.right<=result.left&&result.right<=cloud.left,pageFits:document.documentElement.scrollWidth<=innerWidth};
+   });assert(width<=700?layout.unified:layout.columns);assert(layout.pageFits);
+   assert.equal(await page.locator('.conflict-preview').innerHTML(),expected);
+   assert.equal(await page.locator('.conflict-change').first().getByRole('button',{name:'选择云端',exact:true}).getAttribute('aria-pressed'),'true');
+  }
   await page.getByRole('button',{name:'保存合并结果',exact:true}).tap();await page.waitForFunction(()=>document.getElementById('dialog-title').textContent==='已应用你的选择');
   const m=await page.evaluate(()=>messages.filter(m=>m.type==='resolve').at(-1));assert.equal(m.html,expected);assert.equal(m.revision,3);assert.equal(m.etag,'v2');assert((await page.locator('#dialog-body').textContent()).includes('差异 1：使用云端；差异 2：保留本地'));
+  await page.getByRole('button',{name:'完成',exact:true}).tap();
+ });
+ await t.test('unified rows highlight changed text and can be selected directly without changing HTML',async()=>{
+  const local='<p>height: 400</p><p>共同内容</p>',cloud='<p>height: 500</p><p>共同内容</p>';
+  await receive({type:'dialog',kind:'conflict_view',data:{id:'inline',title:'行内差异',local,cloud,revision:4,etag:'v3'}});
+  await page.waitForSelector('.conflict-change');
+  assert.equal(await page.locator('.conflict-version.mine mark').textContent(),'4');
+  assert.equal(await page.locator('.conflict-version.cloud mark').textContent(),'5');
+  await page.locator('.conflict-change .conflict-version.cloud .conflict-code-text').tap();
+  assert.equal(await page.locator('.conflict-arrow.cloud .conflict-inline-symbol').textContent(),'✓');
+  assert.equal(await page.locator('.conflict-arrow.mine').getAttribute('aria-pressed'),'false');
+  assert.equal(await page.locator('.conflict-preview').innerHTML(),cloud);
+  await page.getByRole('button',{name:'查看内容差异',exact:true}).tap();
+  assert.equal(await page.locator('.conflict-preview').innerHTML(),cloud);
+  await page.locator('.conflict-arrow.mine').tap();
+  assert.equal(await page.locator('.conflict-preview').innerHTML(),local);
+  await page.getByRole('button',{name:'保存合并结果',exact:true}).tap();
+  await page.waitForFunction(()=>document.getElementById('dialog-title').textContent==='已应用你的选择');
+  const saved=await page.evaluate(()=>messages.filter(m=>m.type==='resolve').at(-1));assert.equal(saved.html,local);
   await page.getByRole('button',{name:'完成',exact:true}).tap();
  });
  await t.test('cancel preserves the conflict and cloud deletion has explicit choices',async()=>{
