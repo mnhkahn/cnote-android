@@ -1,6 +1,8 @@
 # CNote Android
 
-轻量、本地优先的 Android 笔记，包名 `com.cyeam.cnote`，Android 8.0（API 26）及以上。只包含笔记，没有 JSON、Diff、CSV 等工具。
+> 安卓保留原来的原生笔记列表、编辑页和移动编辑器；左上角圆角下拉切换「CNote / Trello / OneDrive」，标题显示当前选择，菜单保留全部选项并勾选当前项。笔记业务通过适配层接共享 Rust 核心，后两个功能使用共享页面和原生标题栏，OneDrive 不含挂载。
+
+轻量、本地优先的 Android 笔记，包名 `com.cyeam.cnote`，Android 8.0（API 26）及以上。包含 CNote 笔记、Trello 和 OneDrive 文件管理，不含桌面 JSON、Diff、CSV 工具及文件挂载。
 
 原生 Kotlin 列表、搜索、菜单和系统文件选择器；富文本编辑器与 Bootstrap 图标随 APK 打包，通过本地 HTTPS origin 加载，不加载 cyeam.com 页面或远程脚本。支持标题、列表、待办、表格、图片、撤销/重做、Markdown 输入快捷方式、HTML 导出和系统打印。
 
@@ -66,7 +68,7 @@ python3 scripts/create-signing-key.py
 
 JUnit 覆盖安全文件名、大改动判定、上传确认与编辑/删除并发。Android 仪器测试覆盖离线保存及重开、账号隔离、超过 CursorWindow 大小的内嵌图片、占位笔记保护、冲突选择、精确版本确认、Session 加密与防篡改，以及实际本地 WebView 的保存、编辑树复用、重建恢复与 HTML 清理。
 
-Bootstrap Icons 授权见 `app/src/main/assets/editor/Bootstrap-Icons-LICENSE.txt`。笔记图标复用自现有 CNote 项目。
+Bootstrap Icons 授权见 `app/src/debug/assets/editor/Bootstrap-Icons-LICENSE.txt`。笔记图标复用自现有 CNote 项目。
 
 界面截图：[编辑器](docs/screenshots/editor.png)。
 
@@ -76,3 +78,23 @@ Bootstrap Icons 授权见 `app/src/main/assets/editor/Bootstrap-Icons-LICENSE.tx
 - 点击图片显示操作栏，双击或“放大查看”进入预览，支持缩放、适应窗口、原始尺寸和 Android 返回键关闭。
 - 复制将图片写入系统剪贴板，以只读授权的 FileProvider URI 供其他应用粘贴；剪切等复制成功才移除原图，失败保留原图，可撤销。编辑菜单“粘贴图片”可将剪贴板图片插入笔记。
 - 差异计算使用随 APK 打包的 `diff`（BSD，许可在编辑器资源目录），在本地 Web Worker 运行；修改源码后用 `npm run build:editor` 更新资源。
+
+## 共享核心与 Android AAR 构建
+
+`cnote` 仓库只输出通用 Rust 源码和页面包。本仓库拥有 `native/` JNI 与旧数据库迁移、`sdk-packaging/` Android Library 与 Keystore、NDK 编译和 AAR 打包。Android HTTP 使用本仓库配置的 Rustls/Mozilla 根证书，通过通用 HTTP 工厂接口注入，不依赖额外的 Java 验证器 AAR。
+
+`shared-sdk.lock.json` 固定 `cnote` 的 `shared-vX.Y.Z` Release。CI 和正式发布先运行 `python3 scripts/prepare-sdk.py`，校验源码包、协议、功能和页面摘要，解压到忽略目录 `.shared-source/`，再由 `native/` 编译 SO，使用 `sdk-packaging/` 生成 AAR。校验后的 AAR 原子安装到 `.shared-sdk/`，供 app 模块使用。远端依赖初始 `shared-v0.1.0`，需要先发布通用包；不会下载 latest 或旧的 android-sdk Release。
+
+需要 Rust 1.96+、JDK 21、Android SDK 35、NDK `27.0.12077973`；本地直接从 `cnote` 源码导出通用包时还需要 Node 22+。默认构建 arm64-v8a、armeabi-v7a、x86_64，API 26，逐一检查 16 KiB ELF LOAD 对齐。本地从相邻仓库联调：
+
+```sh
+python3 scripts/prepare-sdk.py --local ../cnote
+./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest
+./gradlew connectedDebugAndroidTest
+```
+
+仅调试模拟器可加 `--abis x86_64`。`--local` 也接受 `cnote/dist/shared` 目录；只下载/解压源码可加 `--source-only`。已准备源码后，可以单独运行 `python3 scripts/build-android-sdk.py` 重建 AAR。产物在 `dist/android-sdk/`，包含 AAR、SHA-256 和记录通用源码及 Android 打包源码摘要的 `sdk.json`。Android CI 上传该目录的 artifact，并继续构建 APK；发布流程仍仅由本仓库应用版本 tag 触发。
+
+JNI 保持 `open`、`dispatch`、`poll` 三个 JSON 协议入口，捕获 panic 并转为 Java 异常。`native/src/migration.rs` 只读、事务迁移旧数据库，迁移标记与数据同时提交，失败不标记、不删除原库。新库位于 `files/shared-core/notes.db`，只由 Rust SQLite 打开，Kotlin 与仪器测试通过命令/事件访问，避免两个 SQLite 实现竞争 WAL。登录令牌迁入 Android Keystore，JobScheduler、OCR、分享和文件选择仍由 Android 宿主处理。
+
+`SharedSdkTest` 验证实际 JNI/WebView 保存、三功能切换和 Activity 重建；`cargo test --manifest-path native/Cargo.toml --locked` 验证迁移。笔记保留原生列表与移动编辑器；左上角圆角选择器显示 CNote / Trello / OneDrive 当前值并保留勾选项。

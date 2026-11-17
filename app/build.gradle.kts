@@ -10,6 +10,7 @@ android {
     namespace="com.cyeam.cnote"
     compileSdk=35
     defaultConfig {
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         applicationId="com.cyeam.cnote"; minSdk=26; targetSdk=35
         versionCode=parts[0]*1_000_000+parts[1]*1_000+parts[2]; versionName=tag
         buildConfigField("String","APP_UPDATE_URL","\"https://www.cyeam.com/api/apps/cnote/update\"")
@@ -31,6 +32,8 @@ android {
     testOptions { animationsDisabled=true }
 }
 dependencies {
+    implementation(files(providers.gradleProperty("cnoteSdkPath").orElse(rootProject.file(".shared-sdk/cnote-sdk.aar").absolutePath).get()))
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-ktx:1.9.1")
     implementation("androidx.fragment:fragment:1.8.5")
@@ -49,3 +52,11 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test:core-ktx:1.5.0")
 }
+
+val verifySharedSdk by tasks.registering {
+    doLast {
+        val sdk = file(providers.gradleProperty("cnoteSdkPath").orElse(rootProject.file(".shared-sdk/cnote-sdk.aar").absolutePath).get())
+        check(sdk.isFile) { "Missing shared SDK: run python3 scripts/prepare-sdk.py --local ../cnote/dist/android-sdk" }
+    }
+}
+tasks.named("preBuild") { dependsOn(verifySharedSdk) }

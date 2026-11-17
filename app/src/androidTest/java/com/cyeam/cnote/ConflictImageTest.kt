@@ -15,12 +15,12 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class ConflictImageTest {
-    private fun js(scenario:ActivityScenario<MainActivity>,script:String):String {
+    private fun js(scenario:ActivityScenario<LegacyNotesActivity>,script:String):String {
         val latch=CountDownLatch(1);var result="null"
         scenario.onActivity { a->a.editorForTest()?.evaluateJavascript(script){result=it;latch.countDown()}?:latch.countDown() }
         assertTrue("WebView callback timed out",latch.await(10,TimeUnit.SECONDS));return result
     }
-    private fun await(scenario:ActivityScenario<MainActivity>,condition:String) {
+    private fun await(scenario:ActivityScenario<LegacyNotesActivity>,condition:String) {
         val until=System.nanoTime()+TimeUnit.SECONDS.toNanos(30)
         while(System.nanoTime()<until){if(js(scenario,condition)=="true")return;Thread.sleep(100)}
         fail("Editor condition timed out: $condition")
@@ -35,7 +35,7 @@ class ConflictImageTest {
         val local="<h1>共同</h1><p>本地</p><p>中间</p><p>本地尾部</p>"
         val cloud="<h1>共同</h1><p>云端</p><p>中间</p><p>云端尾部</p>"
         val note=repo.db.create("Diff Test","");repo.db.saveHtml(note.id,"",local);repo.db.conflict(note.id,cloud,"cloud-v2");repo.refreshList()
-        try { ActivityScenario.launch(MainActivity::class.java).use { scenario->
+        try { ActivityScenario.launch(LegacyNotesActivity::class.java).use { scenario->
             await(scenario,"!!window.cnote");js(scenario,"cnote.action('open',{id:'${note.id}',title:'Diff Test'})")
             await(scenario,"document.querySelectorAll('.conflict-change').length===2&&document.getElementById('dialog').open")
             assertEquals("true",js(scenario,"document.getElementById('dialog-actions').lastElementChild.disabled"));screenshot(app,"conflict-diff.png")
@@ -59,7 +59,7 @@ class ConflictImageTest {
     @Test fun imageCopyUsesSystemUriAndCutWaitsForSuccessAndSupportsUndoAndPaste() {
         val app=ApplicationProvider.getApplicationContext<CNoteApp>();val repo=app.repository
         val note=repo.db.create("Image Test","");repo.refreshList();var previous:android.content.ClipData?=null
-        try { ActivityScenario.launch(MainActivity::class.java).use { scenario->
+        try { ActivityScenario.launch(LegacyNotesActivity::class.java).use { scenario->
             await(scenario,"!!window.cnote");js(scenario,"cnote.action('open',{id:'${note.id}',title:'Image Test'})")
             await(scenario,"document.getElementById('editor')?.contentEditable==='true'")
             scenario.onActivity { previous=it.getSystemService(ClipboardManager::class.java).primaryClip }

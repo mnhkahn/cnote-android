@@ -13,12 +13,12 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class EditorTest {
-    private fun js(scenario:ActivityScenario<MainActivity>,script:String):String {
+    private fun js(scenario:ActivityScenario<LegacyNotesActivity>,script:String):String {
         val latch=CountDownLatch(1);var result="null"
         scenario.onActivity { a->a.editorForTest()?.evaluateJavascript(script){result=it;latch.countDown()}?:latch.countDown() }
         assertTrue("WebView callback timed out",latch.await(10,TimeUnit.SECONDS));return result
     }
-    private fun await(scenario:ActivityScenario<MainActivity>,script:String) {
+    private fun await(scenario:ActivityScenario<LegacyNotesActivity>,script:String) {
         val until=System.nanoTime()+TimeUnit.SECONDS.toNanos(30)
         while(System.nanoTime()<until){if(js(scenario,script)=="true")return;Thread.sleep(100)}
         fail("Editor condition timed out: $script")
@@ -35,7 +35,7 @@ class EditorTest {
         val note=app.repository.db.create("主题切换","")
         try {
             modes.setNightMode(android.app.UiModeManager.MODE_NIGHT_NO)
-            ActivityScenario.launch(MainActivity::class.java).use { scenario->
+            ActivityScenario.launch(LegacyNotesActivity::class.java).use { scenario->
                 await(scenario,"!!window.cnote&&document.documentElement.dataset.theme==='light'")
                 js(scenario,"cnote.action('open',{id:'${note.id}',title:'主题切换'})")
                 await(scenario,"document.getElementById('editor')?.contentEditable==='true'")
@@ -62,7 +62,7 @@ class EditorTest {
     @Test fun localEditorAutosavesSwitchesWithoutSerializationAndRestoresAfterRecreation() {
         val app=ApplicationProvider.getApplicationContext<CNoteApp>();val repo=app.repository
         val a=repo.db.create("测试笔记 A","");val b=repo.db.create("测试笔记 B","")
-        try { ActivityScenario.launch(MainActivity::class.java).use { scenario->
+        try { ActivityScenario.launch(LegacyNotesActivity::class.java).use { scenario->
             await(scenario,"!!window.cnote")
             js(scenario,"cnote.action('open',{id:'${a.id}',title:'测试笔记 A'})")
             await(scenario,"document.getElementById('editor')?.contentEditable==='true'")
@@ -104,7 +104,7 @@ class EditorTest {
     @Test fun changedInactiveCacheReloadsAndPendingDraftIsProtected() {
         val app=ApplicationProvider.getApplicationContext<CNoteApp>();val repo=app.repository
         val a=repo.db.create("缓存 A","");val b=repo.db.create("缓存 B","")
-        try { ActivityScenario.launch(MainActivity::class.java).use { scenario->
+        try { ActivityScenario.launch(LegacyNotesActivity::class.java).use { scenario->
             await(scenario,"!!window.cnote")
             js(scenario,"cnote.action('open',{id:'${a.id}',title:'缓存 A'})")
             await(scenario,"document.getElementById('editor')?.contentEditable==='true'")

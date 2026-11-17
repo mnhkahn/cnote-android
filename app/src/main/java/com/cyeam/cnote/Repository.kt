@@ -126,6 +126,8 @@ class Repository(private val context:Context,private val scope:CoroutineScope,pr
         loginJob?.cancel();emit("load",JSONObject().put("id",JSONObject.NULL));emit("list");emit("login_done");status("已退出登录 · 本机笔记保留")
     }
     fun scheduleSync() {
+        // This repository is a debug-only regression reference; background jobs belong to SharedRuntime.
+        if(BuildConfig.DEBUG)return
         debounce?.cancel();debounce=scope.launch { delay(2000);scope.launch { sync(false) } }
         val scheduler=context.getSystemService(JobScheduler::class.java)
         scheduler.schedule(JobInfo.Builder(26001,ComponentName(context,SyncJobService::class.java)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPersisted(true).setMinimumLatency(3000).setBackoffCriteria(30_000,JobInfo.BACKOFF_POLICY_EXPONENTIAL).build())

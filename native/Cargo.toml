@@ -1,0 +1,27 @@
+[package]
+name = "cnote-android-bridge"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+publish = false
+
+[lib]
+name = "cnote_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+shared-core = { package = "cnote-core", path = "../.shared-source/shared/core" }
+anyhow = "1"
+jni = "=0.21.1"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "json", "form", "multipart"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+webpki-roots = "1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+url = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+strip = "debuginfo"
+lto = "thin"

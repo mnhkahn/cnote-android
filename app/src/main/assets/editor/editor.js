@@ -385,6 +385,7 @@
    case 'delete':deleteNote(data.id,data.title);break;
    case 'focus':document.body.classList.toggle('focus');break;
    case 'save':{const n=active;setTimeout(()=>{flush(n,true);post({type:'save',id:n?.id||''});},0);break;}
+   case 'switch_workspace':barrier(()=>post({type,...data}));break;
    case 'install_update':barrier(()=>post({type:'install_update'}));break;
    case 'close':case 'login':case 'logout':case 'commit_login':barrier(()=>{
     if(type==='logout'||type==='commit_login'){clearImageSelection();for(const n of notes.values())dispose(n);notes.clear();active=null;id='';selection=null;}

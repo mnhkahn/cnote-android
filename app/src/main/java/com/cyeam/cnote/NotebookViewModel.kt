@@ -9,17 +9,17 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /** The bridge only enqueues strings; parsing, HTML and SQLite never run on the UI thread. */
-class NotebookViewModel(app:Application):AndroidViewModel(app) {
+class NotebookViewModel(app:Application):AndroidViewModel(app),NotebookSession {
     val repository=(app as CNoteApp).repository
-    val state=repository.state
-    val effects=repository.events
+    override val state=repository.state
+    override val effects=repository.events
     // Keep the live editing trees through Activity recreation, without retaining an Activity context.
-    var promptedUpdate:Long = -1
-    var pendingInstall=false
-    var editorView:android.webkit.WebView?=null
-    @Volatile var editorReady=false
-    val pendingScripts=ArrayDeque<String>()
-    fun bridge(raw:String) {
+    override var promptedUpdate:Long = -1
+    override var pendingInstall=false
+    override var editorView:android.webkit.WebView?=null
+    @Volatile override var editorReady=false
+    override val pendingScripts=ArrayDeque<String>()
+    override fun bridge(raw:String) {
         if(raw=="{\"type\":\"ready\"}"){editorReady=true;effects.trySend(JSONObject().put("type","web_ready"))}
         post(raw)
     }
@@ -47,7 +47,7 @@ class NotebookViewModel(app:Application):AndroidViewModel(app) {
                 "cancel_login"->repository.cancelLogin()
                 "logout"->repository.logout()
                 "image_clipboard"->copyImage(m)
-                "close","export","print","link","sidebar","image","paste_image","install_update"->effects.trySend(m)
+                "close","export","print","link","sidebar","image","paste_image","install_update","switch_workspace"->effects.trySend(m)
             }
         } catch(t:Exception) { repository.error(t) }
     } }
@@ -58,5 +58,5 @@ class NotebookViewModel(app:Application):AndroidViewModel(app) {
         }
     }
     fun post(raw:String) { commands.trySend(raw) }
-    fun command(type:String,data:JSONObject=JSONObject())=post(data.put("type",type).toString())
+    override fun command(type:String,data:JSONObject)=post(data.put("type",type).toString())
 }

@@ -22,6 +22,7 @@ import androidx.activity.viewModels
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
@@ -34,8 +35,11 @@ import org.json.JSONObject
 import java.text.DateFormat
 import java.util.Date
 
-class MainActivity:ComponentActivity() {
-    private val vm:NotebookViewModel by viewModels()
+open class MainActivity:ComponentActivity() {
+    protected open val useSharedCore=true
+    private val coreVm:CoreNotebookViewModel by viewModels()
+    private val legacyVm:NotebookViewModel by viewModels()
+    private val vm:NotebookSession get()=if(useSharedCore)coreVm else legacyVm
     private val app get()=application as CNoteApp
     private lateinit var root:FrameLayout
     private lateinit var listPane:LinearLayout
@@ -100,7 +104,7 @@ class MainActivity:ComponentActivity() {
             syncLabel.text=state.status
             if(lastNotes!==state.notes){lastNotes=state.notes;filterNotes()}
         } }
-        lifecycleScope.launch { for(event in vm.effects)effect(event) }
+        lifecycleScope.launch { repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { for(event in vm.effects)effect(event) } }
         lifecycleScope.launch { app.updater.state.collect { state->
             renderUpdate(state)
             if(state.stage==UpdateStage.READY&&vm.promptedUpdate!=state.id&&lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
@@ -125,10 +129,14 @@ class MainActivity:ComponentActivity() {
         text=code.toChar().toString();typeface=font;textSize=21f;setTextColor(blue);contentDescription=description;minWidth=0;minimumWidth=0;setPadding(0,0,0,0);setOnClickListener { click() }
         layoutParams=LinearLayout.LayoutParams(dp(48),dp(48))
     }
+    private fun workspaceTitle(size:Float)=WorkspaceSelector(this,0,size) { index->
+        if(index==0)showList() else if(ready)action("switch_workspace",JSONObject().put("workspace",index))
+        else startActivity(Intent(this,SharedActivity::class.java).putExtra("workspace",index))
+    }.apply { layoutParams=LinearLayout.LayoutParams(-2,-2) }
     private fun buildList() {
         listPane=column();root.addView(listPane,FrameLayout.LayoutParams(-1,-1))
         val top=row().apply { setPadding(dp(20),dp(12),dp(10),dp(2)) }
-        val headings=column();headings.addView(label("笔记",32f).apply { typeface=Typeface.DEFAULT_BOLD });subtitle=label("本机笔记 · 随时可离线编辑",12f,muted);headings.addView(subtitle)
+        val headings=column();headings.addView(workspaceTitle(32f));subtitle=label("本机笔记 · 随时可离线编辑",12f,muted);headings.addView(subtitle)
         top.addView(headings,LinearLayout.LayoutParams(0,dp(76),1f));top.addView(icon(0xf64d,"新建笔记",::newNote));top.addView(menuButton(false));listPane.addView(top)
         val input=EditText(this).apply { hint="搜索笔记标题";textSize=15f;setSingleLine();setTextColor(ink);setHintTextColor(muted);background=round(paper,12);setPadding(dp(16),0,dp(16),0);contentDescription="搜索笔记标题" }
         input.addTextChangedListener(object:android.text.TextWatcher { override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int)=Unit;override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){search=s?.toString().orEmpty();filterNotes()};override fun afterTextChanged(s:android.text.Editable?)=Unit })
@@ -201,12 +209,13 @@ class MainActivity:ComponentActivity() {
             "list","sidebar"->showList()
             "close"->finish()
             "install_update"->installUpdate()
+            "switch_workspace"->startActivity(Intent(this,SharedActivity::class.java).putExtra("workspace",event.getInt("workspace")))
             "link"->openLink(event.getString("url"))
             "paste_image"->pasteClipboardImage()
             "image"->{imageNote=vm.state.value.selected;imageLauncher.launch("image/*")}
             "export"->{exportData=event.getString("title") to ("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>CNote</title></head><body>"+event.getString("html")+"</body></html>");exportLauncher.launch(event.getString("title")+".html")}
             "print"->{val view=web?:return;(getSystemService(PRINT_SERVICE) as PrintManager).print("CNote",view.createPrintDocumentAdapter("CNote"),null)}
-            "login_code"->{loginDialog?.dismiss();val code=event.getString("code");val url=event.getString("url");loginDialog=AlertDialog.Builder(this).setTitle("登录 OneDrive").setMessage("在 Microsoft 登录页输入设备码：\n\n$code\n\n返回 CNote 后会自动连接。\n请使用个人 Microsoft 账号。").setNegativeButton("取消登录"){_,_->vm.command("cancel_login")}.setNeutralButton("复制设备码"){_,_->(getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Microsoft 登录码",code));showLoginAgain(code,url)}.setPositiveButton("打开登录页"){_,_->openLink(url);showLoginAgain(code,url)}.setOnCancelListener { vm.command("cancel_login") }.show() }
+            "login_code"->{if(vm.state.value.session.authenticated)return;loginDialog?.dismiss();val code=event.getString("code");val url=event.getString("url");loginDialog=AlertDialog.Builder(this).setTitle("登录 OneDrive").setMessage("在 Microsoft 登录页输入设备码：\n\n$code\n\n返回 CNote 后会自动连接。\n请使用个人 Microsoft 账号。").setNegativeButton("取消登录"){_,_->vm.command("cancel_login")}.setNeutralButton("复制设备码"){_,_->(getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Microsoft 登录码",code));showLoginAgain(code,url)}.setPositiveButton("打开登录页"){_,_->openLink(url);showLoginAgain(code,url)}.setOnCancelListener { vm.command("cancel_login") }.show() }
             "commit_login"->action("commit_login")
             "login_done"->{loginDialog?.dismiss();loginDialog=null}
 

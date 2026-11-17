@@ -27,8 +27,14 @@ jobs:
           java-version: '21'
       - uses: android-actions/setup-android@v4
         with:
-          packages: platform-tools
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973'
       - uses: gradle/actions/setup-gradle@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - name: Build AAR from pinned shared sources
+        run: python3 scripts/prepare-sdk.py
       - name: Validate version and prepare release notes
         run: |
           python3 - <<'PY'

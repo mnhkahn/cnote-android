@@ -1,0 +1,2 @@
+-keep class com.cyeam.cnote.sdk.NativeCore { *; }
+-keep class com.cyeam.cnote.sdk.SecureVault { *; }
