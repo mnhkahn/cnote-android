@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Resolve one explicit SDK release (or an explicit local build), verify, then install atomically."""
-import argparse, hashlib, json, os, shutil, tempfile, urllib.request, zipfile, tarfile, subprocess
+"""Resolve the latest CNote release once, verify its shared sources, then build the Android AAR."""
+import argparse, hashlib, json, os, shutil, tempfile, urllib.request, urllib.error, zipfile, tarfile, subprocess, re
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 def verify(folder,lock,local=False):
@@ -48,9 +48,46 @@ def extract_source(folder, dest):
     for name,key in [('index.html','sha256'),('features.html','featuresSha256')]:
         if hashlib.sha256((dest/'pages'/name).read_bytes()).hexdigest()!=pages[key]: raise ValueError('Shared page checksum mismatch')
 
+def download_source_asset(url, output, lock):
+    try:
+        with urllib.request.urlopen(url,timeout=120) as response,output.open('wb') as target:
+            shutil.copyfileobj(response,target)
+    except urllib.error.HTTPError as error:
+        if error.code==404:
+            raise SystemExit(
+                f"Shared source dependency is unavailable (HTTP 404): {url}\n"
+                f"Build and upload shared assets to CNote release {lock['repository']} {lock['release']}: "
+                "cnote-shared.tar.gz, cnote-shared.tar.gz.sha256 and shared.json before building Android. "
+                "A workflow artifact is not a Release asset. For local development use --local ../cnote."
+            ) from None
+        raise
+
+def resolve_latest_release(config):
+    url=f"https://api.github.com/repos/{config['repository']}/releases/latest"
+    headers={'Accept':'application/vnd.github+json','User-Agent':'CNote-Android-SDK'}
+    token=os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    if token: headers['Authorization']='Bearer '+token
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=120) as response:
+            release=json.load(response)
+    except urllib.error.HTTPError as error:
+        raise SystemExit(f"Cannot resolve latest CNote release: HTTP {error.code}: {url}") from None
+    tag=release.get('tag_name','')
+    version=re.fullmatch(r'[vV]?(\d+\.\d+\.\d+)',tag)
+    if not version or release.get('draft') or release.get('prerelease'):
+        raise SystemExit(f"Latest CNote release is not a stable version: {tag}")
+    required={'cnote-shared.tar.gz','cnote-shared.tar.gz.sha256','shared.json'}
+    missing=required-{asset['name'] for asset in release.get('assets',[])}
+    if missing:
+        raise SystemExit(f"Latest CNote release {tag} is missing shared assets: {', '.join(sorted(missing))}. "
+                         "Publish the shared package to that CNote release before building Android.")
+    print(f"Resolved latest CNote release: {tag}")
+    return {**config,'release':tag,'version':version.group(1)}
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--local',type=Path,help='Portable source package directory or cnote checkout');parser.add_argument('--abis');parser.add_argument('--source-only',action='store_true');args=parser.parse_args()
-    lock=json.loads((ROOT/'shared-sdk.lock.json').read_text())
+    lock=json.loads((ROOT/'shared-sdk.json').read_text())
+    if not args.local: lock=resolve_latest_release(lock)
     with tempfile.TemporaryDirectory(prefix='cnote-source-') as work:
         folder=Path(work)/'package';folder.mkdir()
         if args.local and (args.local/'scripts/build-shared-source.py').is_file():
@@ -60,7 +97,7 @@ def main():
                 if args.local: shutil.copyfile(args.local/name,folder/name)
                 else:
                     url=f"https://github.com/{lock['repository']}/releases/download/{lock['release']}/{name}"
-                    with urllib.request.urlopen(url,timeout=120) as response,(folder/name).open('wb') as output: shutil.copyfileobj(response,output)
+                    download_source_asset(url,folder/name,lock)
         metadata=verify_source(folder,lock,local=args.local is not None)
         extracted=Path(work)/'extracted';extracted.mkdir();extract_source(folder,extracted)
         dest=ROOT/'.shared-source'

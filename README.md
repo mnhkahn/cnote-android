@@ -83,7 +83,9 @@ Bootstrap Icons 授权见 `app/src/debug/assets/editor/Bootstrap-Icons-LICENSE.t
 
 `cnote` 仓库只输出通用 Rust 源码和页面包。本仓库拥有 `native/` JNI 与旧数据库迁移、`sdk-packaging/` Android Library 与 Keystore、NDK 编译和 AAR 打包。Android HTTP 使用本仓库配置的 Rustls/Mozilla 根证书，通过通用 HTTP 工厂接口注入，不依赖额外的 Java 验证器 AAR。
 
-`shared-sdk.lock.json` 固定 `cnote` 的 `shared-vX.Y.Z` Release。CI 和正式发布先运行 `python3 scripts/prepare-sdk.py`，校验源码包、协议、功能和页面摘要，解压到忽略目录 `.shared-source/`，再由 `native/` 编译 SO，使用 `sdk-packaging/` 生成 AAR。校验后的 AAR 原子安装到 `.shared-sdk/`，供 app 模块使用。远端依赖初始 `shared-v0.1.0`，需要先发布通用包；不会下载 latest 或旧的 android-sdk Release。
+`shared-sdk.json` 只配置 CNote 仓库、协议、功能和 ABI，不写死版本。CI 和正式发布运行 `python3 scripts/prepare-sdk.py` 时，先查询 CNote 最新正式 Release，再固定本次解析出的 tag 下载全部共享文件；下载期间出现新版本不会混用文件。随后校验源码包、版本、协议、功能和页面摘要，解压到忽略目录 `.shared-source/`，由 `native/` 编译 SO、`sdk-packaging/` 生成 AAR，原子安装到 `.shared-sdk/`。构建日志与产物元信息记录实际 CNote 版本及源提交。
+
+CNote 正常推版本 tag 时，共享包与 Mac/Web 包发布到同一个 Release，不使用独立共享 tag。最新 Release 缺少共享资产会明确报错，不会自动退回旧版本；现有 `v0.3.0` 需要补上传共享包。
 
 需要 Rust 1.96+、JDK 21、Android SDK 35、NDK `27.0.12077973`；本地直接从 `cnote` 源码导出通用包时还需要 Node 22+。默认构建 arm64-v8a、armeabi-v7a、x86_64，API 26，逐一检查 16 KiB ELF LOAD 对齐。本地从相邻仓库联调：
 

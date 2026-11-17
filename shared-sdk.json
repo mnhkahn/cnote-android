@@ -1,0 +1,14 @@
+{
+  "repository": "mnhkahn/cnote",
+  "protocol": 1,
+  "features": [
+    "notes",
+    "trello",
+    "onedrive"
+  ],
+  "abis": [
+    "arm64-v8a",
+    "armeabi-v7a",
+    "x86_64"
+  ]
+}

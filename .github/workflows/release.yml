@@ -10,7 +10,7 @@ concurrency:
 jobs:
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       CNOTE_KEYSTORE: .signing/release.jks
@@ -33,7 +33,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-      - name: Build AAR from pinned shared sources
+      - name: Build AAR from latest CNote release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 scripts/prepare-sdk.py
       - name: Validate version and prepare release notes
         run: |

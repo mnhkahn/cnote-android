@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   editor-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,10 +20,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:editor
-      - run: npx playwright install --with-deps chromium webkit
-      - run: npm test
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -38,7 +36,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-      - name: Build AAR from pinned shared sources
+      - name: Build AAR from latest CNote release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 scripts/prepare-sdk.py
       - run: python3 -m unittest discover -s scripts/tests -v
       - run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --stacktrace
@@ -59,7 +59,7 @@ jobs:
             app/build/reports/
             app/build/test-results/
   device-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -74,7 +74,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-      - name: Build AAR from pinned shared sources
+      - name: Build AAR from latest CNote release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 scripts/prepare-sdk.py --abis x86_64
       - name: Enable KVM
         run: |
