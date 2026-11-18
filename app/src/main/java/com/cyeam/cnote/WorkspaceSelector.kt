@@ -27,7 +27,7 @@ import android.widget.TextView
 @SuppressLint("AppCompatCustomView")
 class WorkspaceSelector(context:Context,value:Int,size:Float=28f,private val choose:(Int)->Unit):TextView(context) {
     private data class Option(val value:Int,val name:String,val icon:Int)
-    private val options=listOf(Option(0,"CNote",0xf444),Option(4,"Trello",0xf1e2),Option(5,"OneDrive",0xf2c1))
+    private val options=listOf(Option(0,"CNote",0xf444),Option(4,"作业",0xf1e2),Option(5,"OneDrive",0xf2c1))
     private val dark=resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES
     private val ink=Color.parseColor(if(dark)"#DFE7F3" else "#253047")
     private val muted=Color.parseColor(if(dark)"#A4AFC0" else "#75839A")

@@ -163,6 +163,14 @@ class SharedActivity:ComponentActivity() {
             else->receive(e)
         }
     }
+    private var downloadsPermission:kotlinx.coroutines.CompletableDeferred<Boolean>?=null
+    private val requestDownloadsPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted->downloadsPermission?.complete(granted);downloadsPermission=null }
+    private suspend fun ensureDownloadsPermission(){
+        if(android.os.Build.VERSION.SDK_INT>=29||androidx.core.content.ContextCompat.checkSelfPermission(this,android.Manifest.permission.WRITE_EXTERNAL_STORAGE)==android.content.pm.PackageManager.PERMISSION_GRANTED)return
+        val pending=kotlinx.coroutines.CompletableDeferred<Boolean>();downloadsPermission=pending
+        requestDownloadsPermission.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        if(!pending.await())throw SecurityException("未授予下载目录写入权限")
+    }
     private fun media(e:JSONObject) {
         val request=e.getLong("request");val op=e.getString("op")
         lifecycleScope.launch {
@@ -171,6 +179,7 @@ class SharedActivity:ComponentActivity() {
                 val bytes=withContext(Dispatchers.IO){android.util.Base64.decode(data.getString("base64"),android.util.Base64.DEFAULT)}
                 when(op) {
                     "copy_image"->{require(mime.startsWith("image/"));ImageClipboard.copy(applicationContext,"data:$mime;base64,"+data.getString("base64"));vm.reply(request)}
+                    "download_homework_attachment"->{ensureDownloadsPermission();val path=withContext(Dispatchers.IO){HomeworkDownloads.save(applicationContext,e.getString("name"),mime,bytes)};vm.reply(request,JSONObject().put("saved",true).put("path",path))}
                     "download","download_audio"->{check(vm.export==null){"请先完成当前文件保存"};vm.export=(e.optString("name").takeIf { it.isNotBlank()&&it!="null" }?:"attachment") to bytes;vm.exportRequest=request;exporter.launch(vm.export!!.first)}
                     "share_image"->{require(mime.startsWith("image/"));val file=withContext(Dispatchers.IO){File(cacheDir,"clipboard_images").apply { mkdirs() }.let { File(it,UUID.randomUUID().toString()+"."+mime.substringAfter('/').replace(Regex("[^a-zA-Z0-9]"),"")).apply { writeBytes(bytes) } }};share(listOf(file),mime);vm.reply(request,JSONObject().put("shared",true))}
                     "recognize_image"->{require(mime.startsWith("image/"));val bitmap=withContext(Dispatchers.IO){
@@ -179,7 +188,7 @@ class SharedActivity:ComponentActivity() {
                         android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,android.graphics.BitmapFactory.Options().apply { inSampleSize=sample })
                     }?:error("图片无法读取");val recognizer=TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build());recognizer.process(InputImage.fromBitmap(bitmap,0)).addOnSuccessListener { text->vm.reply(request,JSONObject().put("text",text.text)) }.addOnFailureListener { t->vm.reply(request,error=t.message?:"识别失败") }.addOnCompleteListener { recognizer.close();bitmap.recycle() }}
                 }
-            }catch(t:Exception){vm.reply(request,error=t.message?:"附件操作失败")}
+            }catch(t:Exception){vm.reply(request,error=t.message?:"附件操作失败",code=if(op=="download_homework_attachment"&&t is SecurityException)"download_permission_denied" else null)}
         }
     }
     private fun openFile(file:File) {

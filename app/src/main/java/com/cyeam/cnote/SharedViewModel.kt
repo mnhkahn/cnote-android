@@ -30,7 +30,7 @@ class SharedViewModel(app:Application):AndroidViewModel(app) {
     fun bridge(raw:String){bridgeMessages.trySend(raw)}
     fun post(raw:String)=runtime.post(raw)
     override fun onCleared(){bridgeMessages.close();web?.destroy();web=null;super.onCleared()}
-    fun reply(request:Long,data:JSONObject=JSONObject(),error:String?=null) {
-        runtime.events.trySend(JSONObject().put("type","trello").put("result",JSONObject().put("request",request).apply { if(error==null)put("data",data) else put("error",error) }))
+    fun reply(request:Long,data:JSONObject=JSONObject(),error:String?=null,code:String?=null) {
+        runtime.events.trySend(JSONObject().put("type","trello").put("result",JSONObject().put("request",request).apply { if(error==null)put("data",data) else { put("error",error);if(code!=null)put("code",code) } }))
     }
 }

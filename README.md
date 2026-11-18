@@ -1,12 +1,14 @@
 # CNote Android
 
-> 安卓保留原来的原生笔记列表、编辑页和移动编辑器；左上角圆角下拉切换「CNote / Trello / OneDrive」，标题显示当前选择，菜单保留全部选项并勾选当前项。笔记业务通过适配层接共享 Rust 核心，后两个功能使用共享页面和原生标题栏，OneDrive 不含挂载。
+> 安卓保留原来的原生笔记列表、编辑页和移动编辑器；左上角圆角下拉切换「CNote / 作业 / OneDrive」，标题显示当前选择，菜单保留全部选项并勾选当前项。笔记业务通过适配层接共享 Rust 核心，后两个功能使用共享页面和原生标题栏，OneDrive 不含挂载。
 
 轻量、本地优先的 Android 笔记，包名 `com.cyeam.cnote`，Android 8.0（API 26）及以上。包含 CNote 笔记、Trello 和 OneDrive 文件管理，不含桌面 JSON、Diff、CSV 工具及文件挂载。
 
 原生 Kotlin 列表、搜索、菜单和系统文件选择器；富文本编辑器与 Bootstrap 图标随 APK 打包，通过本地 HTTPS origin 加载，不加载 cyeam.com 页面或远程脚本。支持标题、列表、待办、表格、图片、撤销/重做、Markdown 输入快捷方式、HTML 导出和系统打印。
 
 ## 数据与同步
+
+Trello 的“下载作业”保存当前选中日期全部作业的图片和音频，按作业日期、卡片名称和附件序号重命名，直接写入系统公开“下载”目录下的 `CNote` 子文件夹（自动创建）。Android 10 及以上使用 MediaStore，无需逐个选择位置；Android 8/9 首次需要授予存储权限。遇到同名文件不会覆盖已有文件。
 
 - 无需登录即可使用。SQLite WAL + FULL 持久化；输入停止约 200 ms 后保存，连续输入约每秒生成快照。磁盘写入与 JSON 解析在后台执行。返回列表、退出、登录切换时刷新待保存内容；明确退出、删除及切换账号会等待本地保存确认。
 - 一个编辑器实例，通过可切换 Context 的包装器随 ViewModel 保留，Activity 配置重建时也保留未落盘的输入，避免持有旧 Activity。最近笔记保留实际编辑树；已缓存笔记切换不重新加载网页、不重新解析 HTML。列表不查询正文或图片。缓存仅淘汰已保存且非当前的笔记，非当前已保存缓存最多 8 篇 / 约 16 MiB；待保存草稿不会淘汰。
@@ -99,4 +101,4 @@ python3 scripts/prepare-sdk.py --local ../cnote
 
 JNI 保持 `open`、`dispatch`、`poll` 三个 JSON 协议入口，捕获 panic 并转为 Java 异常。`native/src/migration.rs` 只读、事务迁移旧数据库，迁移标记与数据同时提交，失败不标记、不删除原库。新库位于 `files/shared-core/notes.db`，只由 Rust SQLite 打开，Kotlin 与仪器测试通过命令/事件访问，避免两个 SQLite 实现竞争 WAL。登录令牌迁入 Android Keystore，JobScheduler、OCR、分享和文件选择仍由 Android 宿主处理。
 
-`SharedSdkTest` 验证实际 JNI/WebView 保存、三功能切换和 Activity 重建；`cargo test --manifest-path native/Cargo.toml --locked` 验证迁移。笔记保留原生列表与移动编辑器；左上角圆角选择器显示 CNote / Trello / OneDrive 当前值并保留勾选项。
+`SharedSdkTest` 验证实际 JNI/WebView 保存、三功能切换和 Activity 重建；`cargo test --manifest-path native/Cargo.toml --locked` 验证迁移。笔记保留原生列表与移动编辑器；左上角圆角选择器显示 CNote / 作业 / OneDrive 当前值并保留勾选项。

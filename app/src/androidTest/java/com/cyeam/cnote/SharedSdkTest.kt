@@ -73,17 +73,55 @@ class SharedSdkTest {
             var original:android.webkit.WebView?=null
             scenario.onActivity { activity->original=activity.editorForTest();val title=activity.window.decorView.findViewWithTag<TextView>("workspace-switcher");assertEquals("CNote",title.text.toString());title.performClick() }
             val monitor=instrumentation.addMonitor(SharedActivity::class.java.name,null,false)
-            clickMenuText("Trello")
+            clickMenuText("作业")
             val feature=instrumentation.waitForMonitorWithTimeout(monitor,10_000) as? SharedActivity?:error("Feature activity did not open")
             awaitFeature(feature,"typeof cnoteMobile==='object' && cnoteTools.workspace===4")
             assertEquals("true",featureScript(feature,"getComputedStyle(document.getElementById('mobile-tabs')).display==='none' && getComputedStyle(document.querySelector('header')).display==='none'"))
-            instrumentation.runOnMainSync { val selector=feature.window.decorView.findViewWithTag<WorkspaceSelector>("workspace-switcher");assertEquals("Trello",selector.text.toString());assertEquals(4,selector.value);selector.performClick() };clickMenuText("OneDrive")
+            instrumentation.runOnMainSync { val selector=feature.window.decorView.findViewWithTag<WorkspaceSelector>("workspace-switcher");assertEquals("作业",selector.text.toString());assertEquals(4,selector.value);selector.performClick() };clickMenuText("OneDrive")
             awaitFeature(feature,"cnoteTools.workspace===5 && !document.getElementById('drive-tool').hidden")
             instrumentation.runOnMainSync { val selector=feature.window.decorView.findViewWithTag<WorkspaceSelector>("workspace-switcher");assertEquals("OneDrive",selector.text.toString());assertEquals(5,selector.value);selector.performClick() };clickMenuText("CNote")
             instrumentation.waitForIdleSync()
             scenario.onActivity { assertSame(original,it.editorForTest());assertTrue(it.window.decorView.findViewWithTag<TextView>("workspace-switcher").isShown) }
             instrumentation.removeMonitor(monitor)
         }
+    }
+    @Test fun homeworkAttachmentsSaveInPublicDownloadsWithoutOverwriting() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        if(android.os.Build.VERSION.SDK_INT<29)return
+        val name="2026-11-18_作业下载测试_${System.nanoTime()}_图一.png"
+        val created=mutableListOf<android.net.Uri>()
+        try {
+            val first=android.net.Uri.parse(HomeworkDownloads.save(context,name,"image/png",byteArrayOf(1,2,3)));created+=first
+            val second=android.net.Uri.parse(HomeworkDownloads.save(context,name,"image/png",byteArrayOf(4,5,6)));created+=second
+            assertNotEquals(first,second)
+            assertArrayEquals(byteArrayOf(1,2,3),context.contentResolver.openInputStream(first)!!.use { it.readBytes() })
+            assertArrayEquals(byteArrayOf(4,5,6),context.contentResolver.openInputStream(second)!!.use { it.readBytes() })
+            context.contentResolver.query(first,arrayOf(android.provider.MediaStore.Downloads.RELATIVE_PATH,android.provider.MediaStore.Downloads.DISPLAY_NAME,android.provider.MediaStore.Downloads.IS_PENDING),null,null,null)!!.use { cursor->
+                assertTrue(cursor.moveToFirst());assertEquals("Download/CNote/",cursor.getString(0));assertEquals(name,cursor.getString(1));assertEquals(0,cursor.getInt(2))
+            }
+        }finally {created.forEach { context.contentResolver.delete(it,null,null) }}
+    }
+    @Test fun homeworkAudioDownloadUsesTheHostAndPublicDownloads() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as CNoteApp
+        if(android.os.Build.VERSION.SDK_INT<29)return
+        var saved:android.net.Uri?=null
+        try {
+            ActivityScenario.launch(SharedActivity::class.java).use { scenario->
+                var activity:SharedActivity?=null;scenario.onActivity {activity=it};val feature=activity!!
+                awaitFeature(feature,"typeof cnoteMobile==='object' && !!document.getElementById('trello-download-homework')")
+                featureScript(feature,"(()=>{const original=cnoteMobile.receive;cnoteMobile.receive=e=>{if(e.type==='trello'&&e.result.request===98766)window.homeworkDownloadResult=e.result;original(e)}})()")
+                val name="2026-11-18_英语朗读测试_${System.nanoTime()}_音频一.m4a"
+                val bytes=InstrumentationRegistry.getInstrumentation().context.assets.open("homework-silence.m4a").use { it.readBytes() }
+                context.shared.events.trySend(JSONObject().put("type","trello_media").put("request",98766).put("op","download_homework_attachment").put("name",name).put("data",JSONObject().put("mime","audio/mp4").put("base64",android.util.Base64.encodeToString(bytes,android.util.Base64.NO_WRAP))))
+                awaitFeature(feature,"!!window.homeworkDownloadResult")
+                assertEquals("true",featureScript(feature,"window.homeworkDownloadResult.data?.saved===true"))
+                saved=android.net.Uri.parse(featureScript(feature,"window.homeworkDownloadResult.data.path").trim('"'))
+                context.contentResolver.query(saved!!,arrayOf(android.provider.MediaStore.Downloads.RELATIVE_PATH,android.provider.MediaStore.Downloads.DISPLAY_NAME,android.provider.MediaStore.Downloads.MIME_TYPE),null,null,null)!!.use { cursor->
+                    assertTrue(cursor.moveToFirst());assertEquals("Download/CNote/",cursor.getString(0));assertEquals(name,cursor.getString(1));assertEquals("audio/mp4",cursor.getString(2))
+                }
+                assertArrayEquals(bytes,context.contentResolver.openInputStream(saved!!)!!.use { it.readBytes() })
+            }
+        }finally {saved?.let { context.contentResolver.delete(it,null,null) }}
     }
     @Test fun sharedVaultRejectsTamperingAndRestoresAcrossInstances() {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
