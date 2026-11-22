@@ -93,6 +93,9 @@ open class MainActivity:ComponentActivity() {
     }
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null && intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER)) {
+            openFeature(app.lastWorkspace)
+        }
         androidx.core.view.WindowCompat.getInsetsController(window,window.decorView).isAppearanceLightNavigationBars=!dark
         root=FrameLayout(this).apply { setBackgroundColor(bg) };setContentView(root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { view,insets->val bars=insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);insets }
@@ -131,8 +134,13 @@ open class MainActivity:ComponentActivity() {
     }
     private fun workspaceTitle(size:Float)=WorkspaceSelector(this,0,size) { index->
         if(index==0)showList() else if(ready)action("switch_workspace",JSONObject().put("workspace",index))
-        else startActivity(Intent(this,SharedActivity::class.java).putExtra("workspace",index))
+        else openFeature(index)
     }.apply { layoutParams=LinearLayout.LayoutParams(-2,-2) }
+    private fun openFeature(index: Int) {
+        if (index != 4 && index != 5) return
+        app.lastWorkspace = index
+        startActivity(Intent(this, SharedActivity::class.java).putExtra("workspace", index))
+    }
     private fun buildList() {
         listPane=column();root.addView(listPane,FrameLayout.LayoutParams(-1,-1))
         val top=row().apply { setPadding(dp(20),dp(12),dp(10),dp(2)) }
@@ -209,7 +217,7 @@ open class MainActivity:ComponentActivity() {
             "list","sidebar"->showList()
             "close"->finish()
             "install_update"->installUpdate()
-            "switch_workspace"->startActivity(Intent(this,SharedActivity::class.java).putExtra("workspace",event.getInt("workspace")))
+            "switch_workspace"->openFeature(event.getInt("workspace"))
             "link"->openLink(event.getString("url"))
             "paste_image"->pasteClipboardImage()
             "image"->{imageNote=vm.state.value.selected;imageLauncher.launch("image/*")}

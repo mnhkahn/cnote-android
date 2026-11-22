@@ -76,7 +76,14 @@ class SharedActivity:ComponentActivity() {
         workspace=savedInstanceState?.getInt("workspace")?:intent.getIntExtra("workspace",4)
         val root=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setBackgroundColor(background) };setContentView(root)
         val top=LinearLayout(this).apply { gravity=Gravity.CENTER_VERTICAL;setPadding(dp(20),dp(8),dp(12),dp(8)) }
-        featureSelector=WorkspaceSelector(this,workspace,26f) { selected->if(selected==0)finish() else selectFeature(selected) }
+        featureSelector=WorkspaceSelector(this,workspace,26f) { selected ->
+            if (selected == 0) {
+                returnToNotes()
+            } else {
+                app.lastWorkspace = selected
+                selectFeature(selected)
+            }
+        }
         top.addView(featureSelector,LinearLayout.LayoutParams(-2,dp(56)))
         root.addView(top)
         ViewCompat.setOnApplyWindowInsetsListener(root){view,insets->val bars=insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);insets}
@@ -113,7 +120,11 @@ class SharedActivity:ComponentActivity() {
             if(state.stage==UpdateStage.READY&&vm.promptedUpdate!=state.id){vm.promptedUpdate=state.id;showUpdate()}
         } }
         app.updater.checkForUpdate()
-        onBackPressedDispatcher.addCallback(this,object:OnBackPressedCallback(true){override fun handleOnBackPressed(){finish()}})
+        onBackPressedDispatcher.addCallback(this,object:OnBackPressedCallback(true){override fun handleOnBackPressed(){returnToNotes()}})
+    }
+    private fun returnToNotes() {
+        app.lastWorkspace = 0
+        finish()
     }
     private fun dp(value:Int)=(value*resources.displayMetrics.density+.5f).toInt()
     private fun selectFeature(index:Int){workspace=index;featureSelector.updateValue(index);js("cnoteMobile.featureMode($index)")}
@@ -155,7 +166,7 @@ class SharedActivity:ComponentActivity() {
             "check_update"->{app.updater.checkForUpdate(true);showUpdate()}
             "install_update"->installUpdate()
 
-            "close"->finish()
+            "close"->returnToNotes()
             "refresh_workspace"->vm.post("{\"type\":\"refresh\"}")
             "sidebar"->js("cnoteMobile.back()")
             "guard","tool_guard","workspace"->Unit
