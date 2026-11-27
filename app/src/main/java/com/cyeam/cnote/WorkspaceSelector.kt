@@ -27,7 +27,7 @@ import android.widget.TextView
 @SuppressLint("AppCompatCustomView")
 class WorkspaceSelector(context:Context,value:Int,size:Float=28f,private val choose:(Int)->Unit):TextView(context) {
     private data class Option(val value:Int,val name:String,val icon:Int)
-    private val options=listOf(Option(0,"CNote",0xf444),Option(4,"作业",0xf1e2),Option(5,"OneDrive",0xf2c1))
+    private val options=listOf(Option(0,"CNote",0xf444),Option(4,context.getString(R.string.homework_workspace),0xf1e2),Option(5,"OneDrive",0xf2c1))
     private val dark=resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES
     private val ink=Color.parseColor(if(dark)"#DFE7F3" else "#253047")
     private val muted=Color.parseColor(if(dark)"#A4AFC0" else "#75839A")
@@ -54,7 +54,7 @@ class WorkspaceSelector(context:Context,value:Int,size:Float=28f,private val cho
     }
     fun updateValue(selected:Int) {
         value=selected;val name=options.first { it.value==selected }.name
-        text=name;contentDescription="$name，切换功能"
+        text=name;contentDescription=context.getString(R.string.switch_workspace, name)
     }
     private fun dp(value:Int)=(value*resources.displayMetrics.density+.5f).toInt()
     private fun rounded(color:Int,radius:Int,stroke:Boolean=false)=GradientDrawable().apply { setColor(color);cornerRadius=dp(radius).toFloat();if(stroke)setStroke(dp(1),border) }
@@ -75,7 +75,7 @@ class WorkspaceSelector(context:Context,value:Int,size:Float=28f,private val cho
             val icon=TextView(context).apply { text=option.icon.toChar().toString();typeface=iconFont;textSize=20f;gravity=Gravity.CENTER;setTextColor(if(checked)accent else muted);importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO }
             row.addView(icon,LinearLayout.LayoutParams(dp(26),dp(28)).apply { marginEnd=dp(12) })
             row.addView(TextView(context).apply { text=option.name;textSize=16f;setTextColor(if(checked)accent else ink);typeface=if(checked)Typeface.create("sans-serif-medium",Typeface.NORMAL) else Typeface.DEFAULT;includeFontPadding=false },LinearLayout.LayoutParams(0,-2,1f))
-            row.addView(TextView(context).apply { text=if(checked)"✓" else "";textSize=18f;gravity=Gravity.CENTER;setTextColor(accent);contentDescription=if(checked)"当前选中" else null;importantForAccessibility=if(checked)View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO },LinearLayout.LayoutParams(dp(24),dp(28)))
+            row.addView(TextView(context).apply { text=if(checked)"✓" else "";textSize=18f;gravity=Gravity.CENTER;setTextColor(accent);contentDescription=if(checked)context.getString(R.string.workspace_selected) else null;importantForAccessibility=if(checked)View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO },LinearLayout.LayoutParams(dp(24),dp(28)))
             row.setOnClickListener { window.dismiss();if(option.value!=value)choose(option.value) }
             panel.addView(row,LinearLayout.LayoutParams(-1,dp(54)).apply { if(option!=options.last())bottomMargin=dp(4) })
         }

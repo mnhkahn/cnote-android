@@ -5,6 +5,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -79,7 +80,8 @@ class EditorTest {
             assertFalse(clean.contains("onerror"));assertFalse(clean.contains("javascript:"));assertFalse(clean.contains("<script"));assertTrue(clean.contains("checked"));assertTrue(clean.contains("<td>A</td>"))
             // Retain edits in A while switching away before its 200 ms disk snapshot.
             assertEquals("true",js(scenario,"(()=>{const e=document.getElementById('editor');e.innerHTML='<p>快速切换后的草稿</p>';e.dispatchEvent(new Event('input',{bubbles:true}));cnote.action('open',{id:'${b.id}'});cnote.action('open',{id:'${a.id}'});return e===document.getElementById('editor')&&e.textContent==='快速切换后的草稿'})()"))
-            await(scenario,"document.getElementById('status').textContent==='已保存到本机'")
+            val savedLocally=JSONObject.quote(app.getString(R.string.saved_locally))
+            await(scenario,"document.getElementById('status').textContent===$savedLocally")
             val persisted=System.nanoTime()+TimeUnit.SECONDS.toNanos(10)
             while(System.nanoTime()<persisted&&repo.db.get(a.id)!!.html!="<p>快速切换后的草稿</p>")Thread.sleep(50)
             assertEquals("<p>快速切换后的草稿</p>",repo.db.get(a.id)!!.html)

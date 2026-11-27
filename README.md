@@ -26,7 +26,7 @@ Trello 的“下载作业”保存当前选中日期全部作业的图片和音�
 
 ## 构建
 
-JDK 21、Android SDK 35；Gradle Wrapper 8.11.1 / AGP 8.10.1 / Kotlin 2.0.21。首次构建需要网络下载依赖。
+JDK 21、Android SDK 36。Gradle Wrapper 8.11.1 / AGP 8.10.1 / Kotlin 2.0.21。首次构建需要网络下载依赖。
 
 ```sh
 ./gradlew testDebugUnitTest lintDebug assembleDebug
@@ -47,6 +47,18 @@ python3 scripts/create-signing-key.py
 ```
 
 `.signing/` 已忽略，必须私下备份密钥与密码；以后覆盖安装需要同一签名。release APK 在 `app/build/outputs/apk/release/`，R8 mapping 同时保留。debug 与 release 签名不同，互相覆盖安装会失败，请避免通过卸载丢失未同步数据。
+
+### Google Play
+
+```sh
+python3 scripts/prepare-sdk.py
+./gradlew :app:bundlePlayRelease -PreleaseVersion=0.1.10
+jarsigner -verify app/build/outputs/bundle/playRelease/app-playRelease.aab
+```
+
+Play AAB 使用 CNote release 签名和完整的原生 SDK，由 Google Play 分发更新。每次上传时通过 `releaseVersion` 传入新版本。笔记列表右上角菜单可打开 [CNote 隐私政策](https://blog.cyeam.com/cnote/privacy/)。
+
+笔记列表和编辑器随 Android 系统语言显示简体中文或英文。英文用于其他语言的默认回退。OneDrive 文件和 Trello 作业工作区的网页仍由共享 SDK 提供，部分文案使用简体中文。
 
 ## 自动升级与蒲公英发布
 

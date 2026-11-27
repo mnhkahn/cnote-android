@@ -3,6 +3,25 @@ const {chromium,webkit}=require('playwright'),{compareNote}=require('../editor/c
 let server,url;
 before(async()=>{server=http.createServer((req,res)=>{const name=path.basename(new URL(req.url,'http://localhost').pathname)||'index.html';const file=path.join(__dirname,'../../app/src/main/assets/editor',name);if(!fs.existsSync(file)){res.writeHead(404).end();return;}res.setHeader('Content-Type',({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.ttf':'font/ttf'})[path.extname(file)]||'text/plain');res.end(fs.readFileSync(file));});await new Promise(r=>server.listen(0,'127.0.0.1',r));url=`http://127.0.0.1:${server.address().port}/index.html`;});
 after(()=>new Promise(r=>server.close(r)));
+test('English editor localizes controls and status without changing note content',async()=>{
+ const browser=await chromium.launch({headless:true});
+ try {
+  const page=await browser.newPage();
+  await page.addInitScript(()=>{window.Android={editorLanguage:()=> 'en',postMessage:()=>{}};});
+  await page.goto(url);
+  assert.equal(await page.locator('html').getAttribute('lang'),'en');
+  assert(await page.getByRole('heading',{name:'Jot it down'}).isVisible());
+  assert.equal(await page.getByRole('button',{name:'Bold',exact:true}).count(),1);
+  await page.evaluate(()=>{
+   cnote.receive({type:'load',id:'localized',title:'保存',html:'<p>保存</p>'});
+   cnote.receive({type:'state',status:'离线模式 · 笔记保存在本机'});
+  });
+  assert.equal(await page.getByRole('textbox',{name:'Note content'}).textContent(),'保存');
+  assert.equal(await page.locator('#status').textContent(),'Offline · Notes stay on this device');
+  await page.evaluate(()=>cnote.action('delete'));
+  assert.match(await page.locator('#dialog-body').textContent(),/“保存” will be removed/);
+ }finally{await browser.close();}
+});
 test('HTML diff keeps exact versions including formatting and empty sides',()=>{for(const [left,right]of [['<p><b>旧</b></p><p>相同</p>','<p><i>新</i></p><p>相同</p>'],['','<p>new</p>'],['<table><tr><td>A</td></tr></table>','<table><tr><td>B</td></tr></table>']]){const parts=compareNote({left,right});assert.equal(parts.filter(p=>p.kind!=='added').map(p=>p.html).join(''),left);assert.equal(parts.filter(p=>p.kind!=='removed').map(p=>p.html).join(''),right);}});
 for(const [name,type]of [['Chromium',chromium],['WebKit',webkit]])test(name+' mobile conflicts and images',async t=>{
  const browser=await type.launch({headless:true});try{

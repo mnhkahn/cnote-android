@@ -72,23 +72,23 @@ open class MainActivity:ComponentActivity() {
     private val font by lazy { Typeface.createFromAsset(assets,"editor/bootstrap-icons.ttf") }
     private val installPermission=registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         val pending=vm.pendingInstall;vm.pendingInstall=false
-        if(pending&&packageManager.canRequestPackageInstalls())action("install_update")
+        if(BuildConfig.SIDELOAD_UPDATES&&pending&&packageManager.canRequestPackageInstalls())action("install_update")
     }
     private val exportLauncher=registerForActivityResult(ActivityResultContracts.CreateDocument("text/html")) { uri->
         val data=exportData;exportData=null
-        if(uri!=null&&data!=null)lifecycleScope.launch(Dispatchers.IO) { try { contentResolver.openOutputStream(uri,"wt")!!.use { it.write(data.second.toByteArray()) };withContext(Dispatchers.Main){toast("已导出") } }catch(t:Exception){withContext(Dispatchers.Main){toast("导出失败，请重试")}} }
+        if(uri!=null&&data!=null)lifecycleScope.launch(Dispatchers.IO) { try { contentResolver.openOutputStream(uri,"wt")!!.use { it.write(data.second.toByteArray()) };withContext(Dispatchers.Main){toast(getString(R.string.exported)) } }catch(t:Exception){withContext(Dispatchers.Main){toast(getString(R.string.export_failed))}} }
     }
     private val imageLauncher=registerForActivityResult(ActivityResultContracts.GetContent()) { uri->
         val target=imageNote;imageNote=null
         if(uri!=null)lifecycleScope.launch {
             try {
                 val data=withContext(Dispatchers.IO) {
-                    val mime=contentResolver.getType(uri).orEmpty();require(mime in setOf("image/png","image/jpeg","image/webp","image/gif","image/bmp")) { "请选择 PNG、JPEG、WebP 或 GIF 图片" }
+                    val mime=contentResolver.getType(uri).orEmpty();require(mime in setOf("image/png","image/jpeg","image/webp","image/gif","image/bmp")) { getString(R.string.supported_images) }
                     val bytes=contentResolver.openInputStream(uri)!!.use { it.readBytesBounded(8*1024*1024) }
                     "data:$mime;base64,"+android.util.Base64.encodeToString(bytes,android.util.Base64.NO_WRAP)
                 }
                 if(target==vm.state.value.selected)js("window.cnote.insertImage(${JSONObject.quote(data)})")
-            }catch(t:Exception){toast(t.message?:"图片读取失败")}
+            }catch(t:Exception){toast(t.message?:getString(R.string.image_read_failed))}
         }
     }
     override fun onCreate(savedInstanceState:Bundle?) {
@@ -103,12 +103,12 @@ open class MainActivity:ComponentActivity() {
         if(savedInstanceState?.getBoolean("editor_visible")==true)showEditor() else showList()
         if(vm.editorView==null)savedInstanceState?.getString("note_id")?.let { action("open",JSONObject().put("id",it)) }
         lifecycleScope.launch { vm.state.collect { state->
-            subtitle.text=if(state.session.id.isEmpty())"本机笔记 · 随时可离线编辑" else "${state.session.name} · OneDrive"
-            syncLabel.text=state.status
+            subtitle.text=if(state.session.id.isEmpty())getString(R.string.local_notes) else "${state.session.name} · OneDrive"
+            syncLabel.text=localizeNoteStatus(state.status)
             if(lastNotes!==state.notes){lastNotes=state.notes;filterNotes()}
         } }
         lifecycleScope.launch { repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { for(event in vm.effects)effect(event) } }
-        lifecycleScope.launch { app.updater.state.collect { state->
+        if (BuildConfig.SIDELOAD_UPDATES) lifecycleScope.launch { app.updater.state.collect { state->
             renderUpdate(state)
             if(state.stage==UpdateStage.READY&&vm.promptedUpdate!=state.id&&lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
                 vm.promptedUpdate=state.id;showUpdateDialog()
@@ -120,10 +120,16 @@ open class MainActivity:ComponentActivity() {
             else if(editorVisible)showList() else if(ready)action("close") else finish()
         } })
         // Let the native list draw first. The one local editor is retained for every note.
-        root.post { initializeEditor();if(!BuildConfig.DEBUG)app.updater.checkForUpdate() }
+        root.post { initializeEditor();if(BuildConfig.SIDELOAD_UPDATES && !BuildConfig.DEBUG)app.updater.checkForUpdate() }
         vm.command("sync")
     }
     private fun dp(value:Int)=(value*resources.displayMetrics.density+.5f).toInt()
+    private fun localizeNoteStatus(status: String): String = when (status) {
+        "离线模式 · 笔记保存在本机" -> getString(R.string.offline_status)
+        "已保存到本机" -> getString(R.string.saved_locally)
+        "已处理云端删除，草稿已保存到本机" -> getString(R.string.cloud_deletion_saved)
+        else -> status
+    }
     private fun label(value:String,size:Float=16f,color:Int=ink)=TextView(this).apply { text=value;textSize=size;setTextColor(color);gravity=Gravity.CENTER_VERTICAL }
     private fun column()=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
     private fun row()=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL }
@@ -144,9 +150,9 @@ open class MainActivity:ComponentActivity() {
     private fun buildList() {
         listPane=column();root.addView(listPane,FrameLayout.LayoutParams(-1,-1))
         val top=row().apply { setPadding(dp(20),dp(12),dp(10),dp(2)) }
-        val headings=column();headings.addView(workspaceTitle(32f));subtitle=label("本机笔记 · 随时可离线编辑",12f,muted);headings.addView(subtitle)
-        top.addView(headings,LinearLayout.LayoutParams(0,dp(76),1f));top.addView(icon(0xf64d,"新建笔记",::newNote));top.addView(menuButton(false));listPane.addView(top)
-        val input=EditText(this).apply { hint="搜索笔记标题";textSize=15f;setSingleLine();setTextColor(ink);setHintTextColor(muted);background=round(paper,12);setPadding(dp(16),0,dp(16),0);contentDescription="搜索笔记标题" }
+        val headings=column();headings.addView(workspaceTitle(32f));subtitle=label(getString(R.string.local_notes),12f,muted);headings.addView(subtitle)
+        top.addView(headings,LinearLayout.LayoutParams(0,dp(76),1f));top.addView(icon(0xf64d,getString(R.string.new_note),::newNote));top.addView(menuButton(false));listPane.addView(top)
+        val input=EditText(this).apply { hint=getString(R.string.search_notes);textSize=15f;setSingleLine();setTextColor(ink);setHintTextColor(muted);background=round(paper,12);setPadding(dp(16),0,dp(16),0);contentDescription=getString(R.string.search_notes) }
         input.addTextChangedListener(object:android.text.TextWatcher { override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int)=Unit;override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){search=s?.toString().orEmpty();filterNotes()};override fun afterTextChanged(s:android.text.Editable?)=Unit })
         listPane.addView(input,LinearLayout.LayoutParams(-1,dp(46)).apply { setMargins(dp(20),dp(10),dp(20),dp(12)) })
         count=label("",12f,muted).apply { setPadding(dp(24),0,dp(24),0) };listPane.addView(count,LinearLayout.LayoutParams(-1,dp(30)))
@@ -154,17 +160,19 @@ open class MainActivity:ComponentActivity() {
         adapter=NotesAdapter { item->open(item) }
         val list=RecyclerView(this).apply { layoutManager=LinearLayoutManager(this@MainActivity);adapter=this@MainActivity.adapter;setPadding(dp(16),0,dp(16),dp(20));clipToPadding=false;itemAnimator=null }
         area.addView(list,FrameLayout.LayoutParams(-1,-1))
-        empty=label("还没有笔记\n\n点击右上角 ＋，开始记录\n编辑会自动保存到本机",16f,muted).apply { gravity=Gravity.CENTER;setLineSpacing(dp(5).toFloat(),1f) };area.addView(empty,FrameLayout.LayoutParams(-1,-1))
+        empty=label(getString(R.string.empty_notes),16f,muted).apply { gravity=Gravity.CENTER;setLineSpacing(dp(5).toFloat(),1f) };area.addView(empty,FrameLayout.LayoutParams(-1,-1))
         val footer=row().apply { setPadding(dp(20),dp(6),dp(12),dp(10)) }
-        syncLabel=label("本地存储已就绪",11f,muted).apply { maxLines=2;setOnClickListener { reviewOrSync() } };footer.addView(syncLabel,LinearLayout.LayoutParams(0,dp(45),1f));footer.addView(icon(0xf130,"同步 OneDrive"){vm.command("sync")});listPane.addView(footer)
-        updateBanner=label("",13f,blue).apply { visibility=View.GONE;gravity=Gravity.CENTER;setOnClickListener { showUpdateDialog() } }
-        listPane.addView(updateBanner,LinearLayout.LayoutParams(-1,dp(42)))
+        syncLabel=label(getString(R.string.storage_ready),11f,muted).apply { maxLines=2;setOnClickListener { reviewOrSync() } };footer.addView(syncLabel,LinearLayout.LayoutParams(0,dp(45),1f));footer.addView(icon(0xf130,getString(R.string.sync_onedrive)){vm.command("sync")});listPane.addView(footer)
+        if (BuildConfig.SIDELOAD_UPDATES) {
+            updateBanner=label("",13f,blue).apply { visibility=View.GONE;gravity=Gravity.CENTER;setOnClickListener { showUpdateDialog() } }
+            listPane.addView(updateBanner,LinearLayout.LayoutParams(-1,dp(42)))
+        }
     }
     private fun buildEditor() {
         editPane=column().apply { setBackgroundColor(paper);visibility=View.INVISIBLE };root.addView(editPane,FrameLayout.LayoutParams(-1,-1))
         val top=row().apply { setPadding(dp(4),0,dp(8),0) }
-        top.addView(Button(this,null,android.R.attr.borderlessButtonStyle).apply { text="‹ 笔记";textSize=17f;setTextColor(blue);setOnClickListener{showList()} },LinearLayout.LayoutParams(dp(90),dp(52)))
-        top.addView(label("自动保存",12f,muted),LinearLayout.LayoutParams(0,dp(52),1f));top.addView(icon(0xf42a,"插入图片") { if(ready&&vm.state.value.selected!=null){js("window.cnote.focusEditor()");imageNote=vm.state.value.selected;imageLauncher.launch("image/*")} });top.addView(menuButton(true));editPane.addView(top)
+        top.addView(Button(this,null,android.R.attr.borderlessButtonStyle).apply { text=getString(R.string.back_to_notes);textSize=17f;setTextColor(blue);setOnClickListener{showList()} },LinearLayout.LayoutParams(dp(90),dp(52)))
+        top.addView(label(getString(R.string.autosave),12f,muted),LinearLayout.LayoutParams(0,dp(52),1f));top.addView(icon(0xf42a,getString(R.string.insert_image)) { if(ready&&vm.state.value.selected!=null){js("window.cnote.focusEditor()");imageNote=vm.state.value.selected;imageLauncher.launch("image/*")} });top.addView(menuButton(true));editPane.addView(top)
     }
     @Suppress("SetJavaScriptEnabled") private fun initializeEditor() {
         vm.editorView?.let { retained->
@@ -178,6 +186,9 @@ open class MainActivity:ComponentActivity() {
         view.setBackgroundColor(paper);view.isFocusableInTouchMode=true
         view.settings.apply { javaScriptEnabled=true;domStorageEnabled=false;allowFileAccess=false;allowContentAccess=false;mixedContentMode=WebSettings.MIXED_CONTENT_NEVER_ALLOW;setSupportMultipleWindows(false);javaScriptCanOpenWindowsAutomatically=false;builtInZoomControls=false;setGeolocationEnabled(false);mediaPlaybackRequiresUserGesture=true }
         view.addJavascriptInterface(object {
+            @JavascriptInterface
+            fun editorLanguage(): String = view.context.getString(R.string.editor_language_tag)
+
             @JavascriptInterface fun postMessage(raw:String) {
                 model.bridge(raw)
             }
@@ -188,18 +199,20 @@ open class MainActivity:ComponentActivity() {
         }
         editPane.addView(view,LinearLayout.LayoutParams(-1,0,1f));view.loadUrl(EDITOR_URL)
     }
-    private fun menuButton(editing:Boolean)=Button(this,null,android.R.attr.borderlessButtonStyle).apply { text="⋮";textSize=27f;setTextColor(ink);contentDescription="更多选项";layoutParams=LinearLayout.LayoutParams(dp(42),dp(48));setOnClickListener { anchor->
+    private fun menuButton(editing:Boolean)=Button(this,null,android.R.attr.borderlessButtonStyle).apply { text="⋮";textSize=27f;setTextColor(ink);contentDescription=getString(R.string.more_options);layoutParams=LinearLayout.LayoutParams(dp(42),dp(48));setOnClickListener { anchor->
         val popup=PopupMenu(this@MainActivity,anchor)
-        val choices=if(editing)listOf("立即保存","处理同步问题","导出 HTML","打印笔记","删除笔记","检查更新","粘贴图片") else listOf(if(vm.state.value.session.id.isEmpty())"登录 OneDrive" else "退出 OneDrive", "立即同步",if(app.analytics.enabled())"关闭使用统计" else "开启使用统计","检查更新","关于 CNote")
+        val choices=if(editing)listOf(getString(R.string.save_now),getString(R.string.resolve_sync),getString(R.string.export_html),getString(R.string.print_note),getString(R.string.delete_note),getString(R.string.check_updates),getString(R.string.paste_image)) else listOf(if(vm.state.value.session.id.isEmpty())getString(R.string.sign_in_onedrive) else getString(R.string.sign_out_onedrive), getString(R.string.sync_now),if(app.analytics.enabled())getString(R.string.analytics_off) else getString(R.string.analytics_on),getString(R.string.check_updates),getString(R.string.about_cnote))
         choices.forEachIndexed { index,title->popup.menu.add(0,index,index,title) }
+        if (!BuildConfig.SIDELOAD_UPDATES) popup.menu.removeItem(if (editing) 5 else 3)
+        if (!editing) popup.menu.add(0, 7, 7, getString(R.string.privacy_policy))
         popup.setOnMenuItemClickListener { item->
-            if(editing)when(item.itemId){0->action("save");1->reviewOrSync();2->js("document.getElementById('export').click()");3->js("document.getElementById('print').click()");4->action("delete");5->{app.updater.checkForUpdate(true);showUpdateDialog()};6->pasteClipboardImage()}
-            else when(item.itemId){0->if(vm.state.value.session.id.isEmpty())action("login") else action("logout");1->vm.command("sync");2->{app.analytics.enabled(!app.analytics.enabled());toast(if(app.analytics.enabled())"已开启匿名使用统计" else "已关闭使用统计")};3->{app.updater.checkForUpdate(true);showUpdateDialog()};4->AlertDialog.Builder(this@MainActivity).setTitle("CNote ${BuildConfig.VERSION_NAME}").setMessage("本地优先的轻量笔记\n\n编辑自动保存到本机，可通过 OneDrive 同步 Notes 文件夹。\n\n使用统计仅记录功能事件与同步耗时，不包含笔记内容、标题或账号。\n\ncom.cyeam.cnote").setPositiveButton("知道了",null).show()}
+            if(editing)when(item.itemId){0->action("save");1->reviewOrSync();2->js("document.getElementById('export').click()");3->js("document.getElementById('print').click()");4->action("delete");5->checkForUpdate();6->pasteClipboardImage()}
+            else when(item.itemId){0->if(vm.state.value.session.id.isEmpty())action("login") else action("logout");1->vm.command("sync");2->{app.analytics.enabled(!app.analytics.enabled());toast(if(app.analytics.enabled())getString(R.string.analytics_on_notice) else getString(R.string.analytics_off_notice))};3->checkForUpdate();4->AlertDialog.Builder(this@MainActivity).setTitle("CNote ${BuildConfig.VERSION_NAME}").setMessage(getString(R.string.about_description)).setPositiveButton(getString(R.string.ok),null).show();7->openLink("https://blog.cyeam.com/cnote/privacy/")}
             true
         };popup.show()
     } }
-    private fun filterNotes() { if(!::adapter.isInitialized)return;val all=lastNotes.orEmpty();val matches=all.filter { search.isEmpty()||it.title.contains(search,true) };adapter.submitList(matches);empty.visibility=if(matches.isEmpty())View.VISIBLE else View.GONE;empty.text=if(search.isEmpty())"还没有笔记\n\n点击右上角 ＋，开始记录\n编辑会自动保存到本机" else "没有匹配的笔记";count.text=if(search.isEmpty())"${all.size} 篇笔记" else "${matches.size} 篇匹配的笔记" }
-    private fun newNote() { val input=EditText(this).apply { hint="给笔记起个名字";setSingleLine();setPadding(dp(24),dp(8),dp(24),dp(8)) };val dialog=AlertDialog.Builder(this).setTitle("新建笔记").setView(input).setNegativeButton("取消",null).setPositiveButton("创建",null).create();dialog.setOnShowListener { dialog.getButton(-1).setOnClickListener { try { val title=Rules.title(input.text.toString());vm.command("new",JSONObject().put("title",title));dialog.dismiss();showEditor() }catch(t:Exception){input.error=t.message} } };dialog.show();input.requestFocus() }
+    private fun filterNotes() { if(!::adapter.isInitialized)return;val all=lastNotes.orEmpty();val matches=all.filter { search.isEmpty()||it.title.contains(search,true) };adapter.submitList(matches);empty.visibility=if(matches.isEmpty())View.VISIBLE else View.GONE;empty.text=if(search.isEmpty())getString(R.string.empty_notes) else getString(R.string.no_matching_notes);count.text=if(search.isEmpty())resources.getQuantityString(R.plurals.note_count,all.size,all.size) else resources.getQuantityString(R.plurals.match_count,matches.size,matches.size) }
+    private fun newNote() { val input=EditText(this).apply { hint=getString(R.string.note_name);setSingleLine();setPadding(dp(24),dp(8),dp(24),dp(8)) };val dialog=AlertDialog.Builder(this).setTitle(getString(R.string.new_note)).setView(input).setNegativeButton(getString(R.string.cancel),null).setPositiveButton(getString(R.string.create),null).create();dialog.setOnShowListener { dialog.getButton(-1).setOnClickListener { try { val title=Rules.title(input.text.toString());vm.command("new",JSONObject().put("title",title));dialog.dismiss();showEditor() }catch(t:Exception){input.error=t.message} } };dialog.show();input.requestFocus() }
     private fun open(item:Summary) { showEditor();action("open",JSONObject().put("id",item.id).put("title",item.title));app.analytics.screen("note") }
     private fun showEditor() { editorVisible=true;listPane.visibility=View.INVISIBLE;editPane.visibility=View.VISIBLE;(getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(root.windowToken,0) }
     private fun showList() { editorVisible=false;listPane.visibility=View.VISIBLE;editPane.visibility=View.INVISIBLE;if(ready)js("window.cnote.flushAll()");vm.command("list");(getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(root.windowToken,0);app.analytics.screen("notes") }
@@ -223,7 +236,7 @@ open class MainActivity:ComponentActivity() {
             "image"->{imageNote=vm.state.value.selected;imageLauncher.launch("image/*")}
             "export"->{exportData=event.getString("title") to ("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>CNote</title></head><body>"+event.getString("html")+"</body></html>");exportLauncher.launch(event.getString("title")+".html")}
             "print"->{val view=web?:return;(getSystemService(PRINT_SERVICE) as PrintManager).print("CNote",view.createPrintDocumentAdapter("CNote"),null)}
-            "login_code"->{if(vm.state.value.session.authenticated)return;loginDialog?.dismiss();val code=event.getString("code");val url=event.getString("url");loginDialog=AlertDialog.Builder(this).setTitle("登录 OneDrive").setMessage("在 Microsoft 登录页输入设备码：\n\n$code\n\n返回 CNote 后会自动连接。\n请使用个人 Microsoft 账号。").setNegativeButton("取消登录"){_,_->vm.command("cancel_login")}.setNeutralButton("复制设备码"){_,_->(getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Microsoft 登录码",code));showLoginAgain(code,url)}.setPositiveButton("打开登录页"){_,_->openLink(url);showLoginAgain(code,url)}.setOnCancelListener { vm.command("cancel_login") }.show() }
+            "login_code"->{if(vm.state.value.session.authenticated)return;loginDialog?.dismiss();val code=event.getString("code");val url=event.getString("url");loginDialog=AlertDialog.Builder(this).setTitle(getString(R.string.sign_in_onedrive)).setMessage(getString(R.string.device_code_instructions, code)).setNegativeButton(getString(R.string.cancel_sign_in)){_,_->vm.command("cancel_login")}.setNeutralButton(getString(R.string.copy_device_code)){_,_->(getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText(getString(R.string.microsoft_code),code));showLoginAgain(code,url)}.setPositiveButton(getString(R.string.open_sign_in)){_,_->openLink(url);showLoginAgain(code,url)}.setOnCancelListener { vm.command("cancel_login") }.show() }
             "commit_login"->action("commit_login")
             "login_done"->{loginDialog?.dismiss();loginDialog=null}
 
@@ -234,31 +247,31 @@ open class MainActivity:ComponentActivity() {
         lifecycleScope.launch {
             try {
                 val manager=getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                val clip=manager.primaryClip?:error("剪贴板中没有图片")
-                val uri=clip.getItemAt(0).uri?:error("剪贴板中没有图片")
-                require(uri.scheme=="content") { "图片地址无效" }
+                val clip=manager.primaryClip?:error(getString(R.string.clipboard_no_image))
+                val uri=clip.getItemAt(0).uri?:error(getString(R.string.clipboard_no_image))
+                require(uri.scheme=="content") { getString(R.string.invalid_image_uri) }
                 val source=withContext(Dispatchers.IO) {
-                    val mime=contentResolver.getType(uri).orEmpty();require(mime in setOf("image/png","image/jpeg","image/webp","image/gif","image/bmp")) { "剪贴板中没有支持的图片" }
+                    val mime=contentResolver.getType(uri).orEmpty();require(mime in setOf("image/png","image/jpeg","image/webp","image/gif","image/bmp")) { getString(R.string.clipboard_no_supported_image) }
                     val bytes=contentResolver.openInputStream(uri)!!.use { it.readBytesBounded(8*1024*1024) }
                     "data:$mime;base64,"+android.util.Base64.encodeToString(bytes,android.util.Base64.NO_WRAP)
                 }
                 if(target==vm.state.value.selected)js("window.cnote.insertImage(${JSONObject.quote(source)})")
-            }catch(t:Exception) { toast(t.message?:"图片粘贴失败") }
+            }catch(t:Exception) { toast(t.message?:getString(R.string.paste_failed)) }
         }
     }
     private fun renderUpdate(state:UpdateState) {
         updateBanner.visibility=if(state.stage in listOf(UpdateStage.DOWNLOADING,UpdateStage.READY))View.VISIBLE else View.GONE
-        updateBanner.text=if(state.stage==UpdateStage.READY)"CNote ${state.version} 已下载 · 点击安装" else "更新下载 ${state.progress}% · 点击查看"
-        updateMessage?.text=listOf("当前版本 ${BuildConfig.VERSION_NAME}",state.version.takeIf { it.isNotEmpty() }?.let { "新版本 $it" },state.notes.takeIf { it.isNotEmpty() },state.message.takeIf { it.isNotEmpty() }).filterNotNull().joinToString("\n\n")
+        updateBanner.text=if(state.stage==UpdateStage.READY)getString(R.string.update_ready, state.version) else getString(R.string.update_progress, state.progress)
+        updateMessage?.text=listOf(getString(R.string.current_version, BuildConfig.VERSION_NAME),state.version.takeIf { it.isNotEmpty() }?.let { getString(R.string.new_version, it) },state.notes.takeIf { it.isNotEmpty() },state.message.takeIf { it.isNotEmpty() }).filterNotNull().joinToString("\n\n")
         updateProgress?.apply { visibility=if(state.stage==UpdateStage.DOWNLOADING)View.VISIBLE else View.GONE;progress=state.progress }
-        updateDialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.text=when(state.stage){UpdateStage.READY->"安装更新";UpdateStage.FAILED,UpdateStage.IDLE->"重新检查";else->"后台运行"}
+        updateDialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.text=when(state.stage){UpdateStage.READY->getString(R.string.install_update);UpdateStage.FAILED,UpdateStage.IDLE->getString(R.string.check_again);else->getString(R.string.continue_background)}
     }
     private fun showUpdateDialog() {
         if(updateDialog?.isShowing==true)return
         val contents=column().apply { setPadding(dp(24),dp(8),dp(24),dp(8)) }
         updateMessage=label("",14f).apply { gravity=Gravity.TOP };contents.addView(updateMessage)
         updateProgress=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply { max=100 };contents.addView(updateProgress,LinearLayout.LayoutParams(-1,dp(24)))
-        updateDialog=AlertDialog.Builder(this).setTitle("应用更新").setView(ScrollView(this).apply { addView(contents) }).setNegativeButton("稍后",null).setPositiveButton("检查更新",null).create().apply {
+        updateDialog=AlertDialog.Builder(this).setTitle(getString(R.string.app_update)).setView(ScrollView(this).apply { addView(contents) }).setNegativeButton(getString(R.string.later),null).setPositiveButton(getString(R.string.check_updates),null).create().apply {
             setOnDismissListener { updateDialog=null;updateMessage=null;updateProgress=null }
             show();getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 when(app.updater.state.value.stage) {
@@ -271,27 +284,34 @@ open class MainActivity:ComponentActivity() {
         renderUpdate(app.updater.state.value)
     }
     private fun installUpdate() {
+        if (!BuildConfig.SIDELOAD_UPDATES) return
         if(app.updater.state.value.stage!=UpdateStage.READY){showUpdateDialog();return}
         if(!packageManager.canRequestPackageInstalls()) {
             vm.pendingInstall=true
             try { installPermission.launch(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:$packageName"))) }
-            catch(_:Exception){vm.pendingInstall=false;toast("无法打开安装权限设置，请稍后重试")}
+            catch(_:Exception){vm.pendingInstall=false;toast(getString(R.string.update_permission_failed))}
             return
         }
         lifecycleScope.launch {
             try { val intent=app.updater.installIntent();startActivity(intent) }
-            catch(_:Exception){toast("无法安装更新，请重新检查或下载")}
+            catch(_:Exception){toast(getString(R.string.install_update_failed_retry))}
         }
     }
     override fun onResume() {
         super.onResume()
-        if(::updateBanner.isInitialized) {
+        if(BuildConfig.SIDELOAD_UPDATES && ::updateBanner.isInitialized) {
             val state=app.updater.state.value
             if(state.stage==UpdateStage.READY&&vm.promptedUpdate!=state.id){vm.promptedUpdate=state.id;showUpdateDialog()}
         }
     }
+    private fun checkForUpdate() {
+        if (BuildConfig.SIDELOAD_UPDATES) {
+            app.updater.checkForUpdate(true)
+            showUpdateDialog()
+        }
+    }
     private fun showLoginAgain(code:String,url:String) { effect(JSONObject().put("type","login_code").put("code",code).put("url",url)) }
-    private fun openLink(value:String) { try { val uri=Uri.parse(value);require(uri.scheme in listOf("https","http","mailto"));startActivity(Intent(Intent.ACTION_VIEW,uri)) }catch(t:Exception){toast("没有可打开此链接的应用")} }
+    private fun openLink(value:String) { try { val uri=Uri.parse(value);require(uri.scheme in listOf("https","http","mailto"));startActivity(Intent(Intent.ACTION_VIEW,uri)) }catch(t:Exception){toast(getString(R.string.no_link_handler))} }
     private fun toast(message:String)=Toast.makeText(this,message,Toast.LENGTH_LONG).show()
     override fun onStop() { if(ready)js("window.cnote.flushAll()");super.onStop() }
     override fun onSaveInstanceState(outState:Bundle) { outState.putBoolean("editor_visible",editorVisible);vm.state.value.selected?.let { outState.putString("note_id",it) };super.onSaveInstanceState(outState) }
@@ -313,7 +333,7 @@ open class MainActivity:ComponentActivity() {
             container.addView(label(0xf444.toChar().toString(),25f,blue).apply { typeface=font },LinearLayout.LayoutParams(dp(44),-1))
             val texts=column();val title=label("",17f).apply { typeface=Typeface.DEFAULT_BOLD;maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END };val detail=label("",12f,muted).apply { maxLines=1 };texts.addView(title,LinearLayout.LayoutParams(-1,0,1f));texts.addView(detail,LinearLayout.LayoutParams(-1,0,1f));container.addView(texts,LinearLayout.LayoutParams(0,-1,1f));return NoteHolder(container,title,detail)
         }
-        override fun onBindViewHolder(holder:NoteHolder,position:Int) { val n=getItem(position);holder.title.text=n.title;holder.detail.text=dates.format(Date(n.modified))+" · "+if(n.conflict)"需要处理冲突" else if(n.dirty)"已保存到本机" else "已同步";holder.itemView.setOnClickListener { click(n) };holder.itemView.setOnLongClickListener { action("delete",JSONObject().put("id",n.id).put("title",n.title));true } }
+        override fun onBindViewHolder(holder:NoteHolder,position:Int) { val n=getItem(position);holder.title.text=n.title;holder.detail.text=dates.format(Date(n.modified))+" · "+if(n.conflict)getString(R.string.sync_conflict) else if(n.dirty)getString(R.string.saved_locally) else getString(R.string.synced);holder.itemView.setOnClickListener { click(n) };holder.itemView.setOnLongClickListener { action("delete",JSONObject().put("id",n.id).put("title",n.title));true } }
     }
     private class NoteHolder(view:View,val title:TextView,val detail:TextView):RecyclerView.ViewHolder(view)
     companion object { const val EDITOR_URL="https://appassets.androidplatform.net/assets/editor/index.html" }

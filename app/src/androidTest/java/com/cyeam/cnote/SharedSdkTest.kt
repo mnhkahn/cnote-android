@@ -73,11 +73,11 @@ class SharedSdkTest {
             var original:android.webkit.WebView?=null
             scenario.onActivity { activity->original=activity.editorForTest();val title=activity.window.decorView.findViewWithTag<TextView>("workspace-switcher");assertEquals("CNote",title.text.toString());title.performClick() }
             val monitor=instrumentation.addMonitor(SharedActivity::class.java.name,null,false)
-            clickMenuText("作业")
+            clickMenuText(instrumentation.targetContext.getString(R.string.homework_workspace))
             val feature=instrumentation.waitForMonitorWithTimeout(monitor,10_000) as? SharedActivity?:error("Feature activity did not open")
             awaitFeature(feature,"typeof cnoteMobile==='object' && cnoteTools.workspace===4")
             assertEquals("true",featureScript(feature,"getComputedStyle(document.getElementById('mobile-tabs')).display==='none' && getComputedStyle(document.querySelector('header')).display==='none'"))
-            instrumentation.runOnMainSync { val selector=feature.window.decorView.findViewWithTag<WorkspaceSelector>("workspace-switcher");assertEquals("作业",selector.text.toString());assertEquals(4,selector.value);selector.performClick() };clickMenuText("OneDrive")
+            instrumentation.runOnMainSync { val selector=feature.window.decorView.findViewWithTag<WorkspaceSelector>("workspace-switcher");assertEquals(feature.getString(R.string.homework_workspace),selector.text.toString());assertEquals(4,selector.value);selector.performClick() };clickMenuText("OneDrive")
             awaitFeature(feature,"cnoteTools.workspace===5 && !document.getElementById('drive-tool').hidden")
             instrumentation.runOnMainSync { val selector=feature.window.decorView.findViewWithTag<WorkspaceSelector>("workspace-switcher");assertEquals("OneDrive",selector.text.toString());assertEquals(5,selector.value);selector.performClick() };clickMenuText("CNote")
             instrumentation.waitForIdleSync()
